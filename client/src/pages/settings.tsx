@@ -18,10 +18,27 @@ export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { data: profile } = useQuery<Profile | null>({ queryKey: ["/api/profile"] });
 
+  const [accountForm, setAccountForm] = useState({
+    firstName: user?.firstName || "",
+    lastName: user?.lastName || "",
+    email: user?.email || "",
+  });
+
   const [billingForm, setBillingForm] = useState({
     companyName: profile?.companyName || "",
     companyAddress: profile?.companyAddress || "",
     taxNumber: profile?.taxNumber || "",
+  });
+
+  const saveAccount = useMutation({
+    mutationFn: (data: any) => apiRequest("PATCH", "/api/auth/user", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      toast({ title: "تم حفظ بيانات الحساب" });
+    },
+    onError: () => {
+      toast({ title: "فشل في حفظ بيانات الحساب", variant: "destructive" });
+    },
   });
 
   const saveBilling = useMutation({
@@ -31,6 +48,16 @@ export default function SettingsPage() {
       toast({ title: "تم حفظ بيانات الفوترة" });
     },
   });
+
+  useEffect(() => {
+    if (user) {
+      setAccountForm({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        email: user.email || "",
+      });
+    }
+  }, [user]);
 
   useEffect(() => {
     if (profile) {
@@ -58,11 +85,13 @@ export default function SettingsPage() {
             <CardHeader><CardTitle>معلومات الحساب</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><Label>الاسم الأول</Label><Input value={user?.firstName || ""} readOnly className="bg-muted" /></div>
-                <div><Label>اسم العائلة</Label><Input value={user?.lastName || ""} readOnly className="bg-muted" /></div>
-                <div><Label>البريد الإلكتروني</Label><Input value={user?.email || ""} readOnly className="bg-muted" /></div>
+                <div><Label>الاسم الأول</Label><Input value={accountForm.firstName} onChange={(e) => setAccountForm({ ...accountForm, firstName: e.target.value })} data-testid="input-first-name" /></div>
+                <div><Label>اسم العائلة</Label><Input value={accountForm.lastName} onChange={(e) => setAccountForm({ ...accountForm, lastName: e.target.value })} data-testid="input-last-name" /></div>
+                <div><Label>البريد الإلكتروني</Label><Input value={accountForm.email} onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })} data-testid="input-email" /></div>
               </div>
-              <p className="text-sm text-muted-foreground">لتعديل معلومات حسابك، يرجى تعديلها من إعدادات حسابك في Replit.</p>
+              <Button onClick={() => saveAccount.mutate(accountForm)} disabled={saveAccount.isPending} data-testid="button-save-account">
+                {saveAccount.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حفظ
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
