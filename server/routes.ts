@@ -8,6 +8,16 @@ function getUserId(req: Request): string {
   return (req.user as any)?.claims?.sub;
 }
 
+function cleanDates(obj: Record<string, any>, dateFields: string[]): Record<string, any> {
+  const cleaned = { ...obj };
+  for (const field of dateFields) {
+    if (cleaned[field] === "" || cleaned[field] === undefined) {
+      cleaned[field] = null;
+    }
+  }
+  return cleaned;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -143,16 +153,19 @@ export async function registerRoutes(
 
   app.post("/api/contracts", isAuthenticated, async (req, res) => {
     try {
-      const contract = await storage.createContract({ ...req.body, userId: getUserId(req) });
+      const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
+      const contract = await storage.createContract({ ...cleanedData, userId: getUserId(req) });
       res.json(contract);
     } catch (error) {
+      console.error("Contract creation error:", error);
       res.status(500).json({ message: "فشل في إنشاء العقد" });
     }
   });
 
   app.patch("/api/contracts/:id", isAuthenticated, async (req, res) => {
     try {
-      const contract = await storage.updateContract(req.params.id, getUserId(req), req.body);
+      const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
+      const contract = await storage.updateContract(req.params.id, getUserId(req), cleanedData);
       if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
       res.json(contract);
     } catch (error) {
@@ -202,7 +215,8 @@ export async function registerRoutes(
   app.post("/api/invoices", isAuthenticated, async (req, res) => {
     try {
       const { items, ...invoiceData } = req.body;
-      const invoice = await storage.createInvoice({ ...invoiceData, userId: getUserId(req) });
+      const cleanedData = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
+      const invoice = await storage.createInvoice({ ...cleanedData, userId: getUserId(req) });
       if (items && items.length > 0) {
         for (const item of items) {
           await storage.createInvoiceItem({ ...item, invoiceId: invoice.id });
@@ -211,6 +225,7 @@ export async function registerRoutes(
       const createdItems = await storage.getInvoiceItems(invoice.id);
       res.json({ ...invoice, items: createdItems });
     } catch (error) {
+      console.error("Invoice creation error:", error);
       res.status(500).json({ message: "فشل في إنشاء الفاتورة" });
     }
   });
@@ -218,7 +233,8 @@ export async function registerRoutes(
   app.patch("/api/invoices/:id", isAuthenticated, async (req, res) => {
     try {
       const { items, ...invoiceData } = req.body;
-      const invoice = await storage.updateInvoice(req.params.id, getUserId(req), invoiceData);
+      const cleanedInvoice = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
+      const invoice = await storage.updateInvoice(req.params.id, getUserId(req), cleanedInvoice);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (items) {
         await storage.deleteInvoiceItemsByInvoiceId(req.params.id);
@@ -265,7 +281,8 @@ export async function registerRoutes(
 
   app.post("/api/projects", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.createProject({ ...req.body, userId: getUserId(req) });
+      const cleanedData = cleanDates(req.body, ["startDate", "deadline"]);
+      const project = await storage.createProject({ ...cleanedData, userId: getUserId(req) });
       res.json(project);
     } catch (error) {
       res.status(500).json({ message: "فشل في إنشاء المشروع" });
@@ -341,11 +358,14 @@ export async function registerRoutes(
 
   app.post("/api/services", isAuthenticated, async (req, res) => {
     try {
-      const profile = await storage.getProfile(getUserId(req));
-      if (!profile) return res.status(400).json({ message: "يرجى إعداد البروفايل أولاً" });
+      let profile = await storage.getProfile(getUserId(req));
+      if (!profile) {
+        profile = await storage.upsertProfile({ userId: getUserId(req), username: `user-${getUserId(req).slice(0, 8)}`, isPublic: true });
+      }
       const service = await storage.createService({ ...req.body, profileId: profile.id });
       res.json(service);
     } catch (error) {
+      console.error("Service creation error:", error);
       res.status(500).json({ message: "فشل في إضافة الخدمة" });
     }
   });
