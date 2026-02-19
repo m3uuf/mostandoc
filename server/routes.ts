@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
 import { registerAuthRoutes } from "./replit_integrations/auth/routes";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 
 function getUserId(req: Request): string {
   return (req.user as any)?.claims?.sub;
@@ -25,6 +26,7 @@ export async function registerRoutes(
 
   await setupAuth(app);
   registerAuthRoutes(app);
+  registerObjectStorageRoutes(app);
 
   app.get("/api/dashboard/stats", isAuthenticated, async (req: Request, res: Response) => {
     try {

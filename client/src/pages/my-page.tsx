@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Globe, Plus, Pencil, Trash2, Loader2, ExternalLink, Mail, Eye } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
+import { Globe, Plus, Pencil, Trash2, Loader2, ExternalLink, Mail, Eye, Upload, Lock, Image, X } from "lucide-react";
 import type { Profile, Service, PortfolioItem, ContactMessage } from "@shared/schema";
 
 export default function MyPageManager() {
@@ -22,6 +23,16 @@ export default function MyPageManager() {
   const { data: servicesList = [] } = useQuery<Service[]>({ queryKey: ["/api/services"] });
   const { data: portfolio = [] } = useQuery<PortfolioItem[]>({ queryKey: ["/api/portfolio"] });
   const { data: messages = [] } = useQuery<ContactMessage[]>({ queryKey: ["/api/messages"] });
+
+  const profileExists = !!profile;
+
+  const handleTabChange = (tab: string) => {
+    if ((tab === "services" || tab === "portfolio") && !profileExists) {
+      toast({ title: "يرجى إنشاء البروفايل أولاً قبل إضافة الخدمات أو الأعمال", variant: "destructive" });
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -36,11 +47,17 @@ export default function MyPageManager() {
         )}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="profile" data-testid="tab-profile">البروفايل</TabsTrigger>
-          <TabsTrigger value="services" data-testid="tab-services">الخدمات</TabsTrigger>
-          <TabsTrigger value="portfolio" data-testid="tab-portfolio">معرض الأعمال</TabsTrigger>
+          <TabsTrigger value="services" data-testid="tab-services" disabled={!profileExists} className="relative">
+            {!profileExists && <Lock className="h-3 w-3 ml-1" />}
+            الخدمات
+          </TabsTrigger>
+          <TabsTrigger value="portfolio" data-testid="tab-portfolio" disabled={!profileExists} className="relative">
+            {!profileExists && <Lock className="h-3 w-3 ml-1" />}
+            معرض الأعمال
+          </TabsTrigger>
           <TabsTrigger value="messages" data-testid="tab-messages">
             الرسائل
             {messages.filter((m) => !m.isRead).length > 0 && (
@@ -54,6 +71,64 @@ export default function MyPageManager() {
         <TabsContent value="portfolio"><PortfolioTab items={portfolio} /></TabsContent>
         <TabsContent value="messages"><MessagesTab messages={messages} /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|ogg|mov|avi)$/i.test(url) || url.includes("video");
+}
+
+function FileUploadButton({ onUploaded, currentUrl, label, acceptTypes = "image/*,video/*" }: { onUploaded: (path: string) => void; currentUrl?: string; label: string; acceptTypes?: string }) {
+  const [uploading, setUploading] = useState(false);
+  const [lastFileType, setLastFileType] = useState<string>("");
+  const { uploadFile } = useUpload({
+    onSuccess: (response) => {
+      onUploaded(response.objectPath);
+      setUploading(false);
+    },
+    onError: () => {
+      setUploading(false);
+    },
+  });
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setLastFileType(file.type);
+    await uploadFile(file);
+    e.target.value = "";
+  };
+
+  const isVideo = currentUrl ? (isVideoUrl(currentUrl) || lastFileType.startsWith("video/")) : false;
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {currentUrl && (
+        <div className="relative w-full h-32 rounded-md overflow-hidden border">
+          {isVideo ? (
+            <video src={currentUrl} className="w-full h-full object-cover" controls muted />
+          ) : (
+            <img src={currentUrl} alt="preview" className="w-full h-full object-cover" />
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button variant="outline" size="sm" disabled={uploading} asChild>
+          <label className="cursor-pointer" data-testid="button-upload-file">
+            {uploading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Upload className="ml-2 h-4 w-4" />}
+            {uploading ? "جاري الرفع..." : "رفع ملف"}
+            <input type="file" className="hidden" accept={acceptTypes} onChange={handleFileSelect} disabled={uploading} />
+          </label>
+        </Button>
+        {currentUrl && (
+          <Button variant="ghost" size="sm" onClick={() => onUploaded("")} data-testid="button-remove-file">
+            <X className="ml-1 h-3 w-3" /> إزالة
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -101,6 +176,11 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
   return (
     <Card>
       <CardContent className="p-4 space-y-4">
+        {!profile && (
+          <div className="bg-accent/10 border border-accent/30 rounded-md p-3 text-sm text-accent-foreground" data-testid="text-profile-required-notice">
+            أنشئ بروفايلك أولاً لتتمكن من إضافة الخدمات ومعرض الأعمال
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div><Label>اسم المستخدم (رابط صفحتك) *</Label><Input value={form.username} onChange={(e) => update("username", e.target.value)} data-testid="input-username" /><p className="text-xs text-muted-foreground mt-1">{window.location.origin}/p/{form.username}</p></div>
           <div><Label>الاسم الكامل</Label><Input value={form.fullName} onChange={(e) => update("fullName", e.target.value)} data-testid="input-fullname" /></div>
@@ -136,7 +216,7 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
 function ServicesTab({ services }: { services: Service[] }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ title: "", description: "", price: "", priceType: "fixed" });
+  const [form, setForm] = useState({ title: "", description: "", price: "", priceType: "fixed", imageUrl: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const createMutation = useMutation({
@@ -152,8 +232,8 @@ function ServicesTab({ services }: { services: Service[] }) {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/services"] }); toast({ title: "تم حذف الخدمة" }); },
   });
 
-  const openCreate = () => { setEditingId(null); setForm({ title: "", description: "", price: "", priceType: "fixed" }); setDialogOpen(true); };
-  const openEdit = (s: Service) => { setEditingId(s.id); setForm({ title: s.title, description: s.description || "", price: s.price || "", priceType: s.priceType || "fixed" }); setDialogOpen(true); };
+  const openCreate = () => { setEditingId(null); setForm({ title: "", description: "", price: "", priceType: "fixed", imageUrl: "" }); setDialogOpen(true); };
+  const openEdit = (s: Service) => { setEditingId(s.id); setForm({ title: s.title, description: s.description || "", price: s.price || "", priceType: s.priceType || "fixed", imageUrl: (s as any).imageUrl || "" }); setDialogOpen(true); };
   const handleSave = () => {
     if (!form.title.trim()) return;
     if (editingId) updateMutation.mutate({ id: editingId, data: form }); else createMutation.mutate(form);
@@ -172,7 +252,12 @@ function ServicesTab({ services }: { services: Service[] }) {
             <Card key={s.id}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-2">
-                  <div><h3 className="font-semibold">{s.title}</h3>{s.description && <p className="text-sm text-muted-foreground mt-1">{s.description}</p>}</div>
+                  <div className="flex gap-3 items-start flex-1 min-w-0">
+                    {(s as any).imageUrl && (
+                      <img src={(s as any).imageUrl} alt={s.title} className="w-16 h-16 object-cover rounded-md shrink-0" />
+                    )}
+                    <div className="min-w-0"><h3 className="font-semibold">{s.title}</h3>{s.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{s.description}</p>}</div>
+                  </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button size="icon" variant="ghost" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
                     <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(s.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -190,8 +275,8 @@ function ServicesTab({ services }: { services: Service[] }) {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingId ? "تعديل الخدمة" : "إضافة خدمة"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>عنوان الخدمة *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-            <div><Label>الوصف</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+            <div><Label>عنوان الخدمة *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-service-title" /></div>
+            <div><Label>الوصف</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-service-description" /></div>
             <div>
               <Label>نوع التسعير</Label>
               <Select value={form.priceType} onValueChange={(v) => setForm({ ...form, priceType: v })}>
@@ -201,11 +286,17 @@ function ServicesTab({ services }: { services: Service[] }) {
                 </SelectContent>
               </Select>
             </div>
-            {form.priceType !== "negotiable" && <div><Label>السعر</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>}
+            {form.priceType !== "negotiable" && <div><Label>السعر</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} data-testid="input-service-price" /></div>}
+            <FileUploadButton
+              label="صورة الخدمة"
+              currentUrl={form.imageUrl || undefined}
+              onUploaded={(path) => setForm({ ...form, imageUrl: path })}
+              acceptTypes="image/*"
+            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>إلغاء</Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>حفظ</Button>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-service">حفظ</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -252,7 +343,16 @@ function PortfolioTab({ items }: { items: PortfolioItem[] }) {
                 {item.imageUrl && <img src={item.imageUrl} alt={item.title} className="w-full h-40 object-cover rounded-md" />}
                 <h3 className="font-semibold">{item.title}</h3>
                 {item.description && <p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>}
-                {item.category && <Badge variant="secondary">{item.category}</Badge>}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {item.category && <Badge variant="secondary">{item.category}</Badge>}
+                  {item.link && (
+                    <Button variant="ghost" size="sm" asChild>
+                      <a href={item.link} target="_blank" rel="noopener noreferrer" data-testid={`link-portfolio-${item.id}`}>
+                        <ExternalLink className="ml-1 h-3 w-3" /> عرض
+                      </a>
+                    </Button>
+                  )}
+                </div>
                 <div className="flex items-center gap-1 pt-1">
                   <Button size="icon" variant="ghost" onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(item.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -266,15 +366,19 @@ function PortfolioTab({ items }: { items: PortfolioItem[] }) {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editingId ? "تعديل العمل" : "إضافة عمل"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>العنوان *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-            <div><Label>الوصف</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div><Label>رابط الصورة</Label><Input value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} /></div>
-            <div><Label>رابط المشروع</Label><Input value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} /></div>
-            <div><Label>التصنيف</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></div>
+            <div><Label>العنوان *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-portfolio-title" /></div>
+            <div><Label>الوصف</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-portfolio-description" /></div>
+            <FileUploadButton
+              label="صورة أو فيديو العمل"
+              currentUrl={form.imageUrl || undefined}
+              onUploaded={(path) => setForm({ ...form, imageUrl: path })}
+            />
+            <div><Label>رابط المشروع</Label><Input value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://..." data-testid="input-portfolio-link" /></div>
+            <div><Label>التصنيف</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} data-testid="input-portfolio-category" /></div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>إلغاء</Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>حفظ</Button>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-portfolio">حفظ</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

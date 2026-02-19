@@ -125,6 +125,7 @@ export const services = pgTable("services", {
   description: text("description"),
   price: decimal("price", { precision: 12, scale: 2 }),
   priceType: text("price_type").default("fixed"),
+  imageUrl: text("image_url"),
   sortOrder: integer("sort_order").default(0),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),

@@ -50,6 +50,17 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - 15% VAT auto-calculation
 - Contact form on public profiles
 - Dark/light mode toggle
+- Services/Portfolio tabs locked until profile is created
+- File upload for service images and portfolio items (images/videos) via Replit Object Storage
+
+## File Upload
+- Uses Replit Object Storage with presigned URL flow
+- Upload endpoint: POST /api/uploads/request-url (authenticated)
+- Object serving: GET /objects/* 
+- Services accept image uploads only
+- Portfolio accepts image and video uploads
+- Files stored at /objects/uploads/<uuid> paths
 
 ## Recent Changes
+- 2026-02-19: Added tab locking (services/portfolio require profile), file upload support for services and portfolio
 - 2026-02-19: Initial full build of all pages and features
