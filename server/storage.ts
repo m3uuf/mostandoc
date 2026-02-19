@@ -2,7 +2,7 @@ import { eq, and, desc, like, or, sql, count, sum, lt, gte, lte } from "drizzle-
 import { db } from "./db";
 import {
   profiles, clients, contracts, invoices, invoiceItems, projects, projectTasks,
-  services, portfolioItems, contactMessages, notifications,
+  services, portfolioItems, contactMessages, notifications, subscriptions,
   type Profile, type InsertProfile,
   type Client, type InsertClient,
   type Contract, type InsertContract,
@@ -14,6 +14,7 @@ import {
   type PortfolioItem, type InsertPortfolioItem,
   type ContactMessage, type InsertContactMessage,
   type Notification, type InsertNotification,
+  type Subscription,
 } from "@shared/schema";
 
 export interface PaginatedResult<T> {
@@ -110,6 +111,11 @@ export interface IStorage {
     pendingInvoiceTotal: string;
     activeProjectCount: number;
   }>;
+
+  getSubscription(userId: string): Promise<Subscription | undefined>;
+  getSubscriptionByCustomerId(stripeCustomerId: string): Promise<Subscription | undefined>;
+  upsertSubscription(data: Partial<Subscription> & { userId: string; stripeCustomerId: string }): Promise<Subscription>;
+  updateSubscriptionByCustomerId(stripeCustomerId: string, data: Partial<Subscription>): Promise<Subscription | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -580,6 +586,35 @@ export class DatabaseStorage implements IStorage {
       pendingInvoiceTotal: pendingStats.total,
       activeProjectCount: projectResult.count,
     };
+  }
+
+  async getSubscription(userId: string) {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    return sub;
+  }
+
+  async getSubscriptionByCustomerId(stripeCustomerId: string) {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.stripeCustomerId, stripeCustomerId));
+    return sub;
+  }
+
+  async upsertSubscription(data: Partial<Subscription> & { userId: string; stripeCustomerId: string }) {
+    const [sub] = await db.insert(subscriptions)
+      .values(data as any)
+      .onConflictDoUpdate({
+        target: subscriptions.userId,
+        set: { ...data, updatedAt: new Date() },
+      })
+      .returning();
+    return sub;
+  }
+
+  async updateSubscriptionByCustomerId(stripeCustomerId: string, data: Partial<Subscription>) {
+    const [sub] = await db.update(subscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(subscriptions.stripeCustomerId, stripeCustomerId))
+      .returning();
+    return sub;
   }
 }
 

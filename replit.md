@@ -29,7 +29,7 @@ client/src/index.css    - Theme variables & custom styles
 ```
 
 ## Database Tables
-profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, services, portfolio_items, contact_messages, notifications
+profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, services, portfolio_items, contact_messages, notifications, subscriptions
 
 ## Pages
 - Landing (/) - Marketing page with login CTA
@@ -79,7 +79,18 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Public profile dynamically renders all customization options
 - Safe fallback: if headerStyle=image but no cover uploaded, falls back to gradient
 
+## Stripe Subscriptions
+- Plans: starter (29 SAR), pro (59 SAR), business (99 SAR)
+- 14-day free trial on all plans
+- Stripe Checkout for payment, Stripe Customer Portal for management
+- Webhook endpoint: POST /api/webhooks/stripe (handles subscription lifecycle)
+- API: GET /api/subscription, POST /api/subscription/checkout, POST /api/subscription/portal
+- Settings page shows subscription status with manage/cancel via Stripe portal
+- Landing page pricing buttons trigger Stripe Checkout (or login redirect if unauthenticated)
+- Secrets: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY (STRIPE_WEBHOOK_SECRET optional for dev)
+
 ## Recent Changes
+- 2026-02-19: Added Stripe subscription payments (checkout, portal, webhooks, subscription tab in settings)
 - 2026-02-19: Added profile customization (colors, logo, cover, themes, button styles, live preview)
 - 2026-02-19: Added PDF download for invoices and contracts
 - 2026-02-19: Added tab locking (services/portfolio require profile), file upload support for services and portfolio

@@ -1,10 +1,19 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
+import Stripe from "stripe";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
 import { registerAuthRoutes } from "./replit_integrations/auth/routes";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-01-27.acacia" as any });
+
+const PLANS: Record<string, { name: string; priceAmount: number }> = {
+  starter: { name: "المبتدئ", priceAmount: 2900 },
+  pro: { name: "المحترف", priceAmount: 5900 },
+  business: { name: "الأعمال", priceAmount: 9900 },
+};
 
 function getUserId(req: Request): string {
   return (req.user as any)?.claims?.sub;
@@ -593,6 +602,157 @@ export async function registerRoutes(
     } catch (error) {
       res.status(500).json({ message: "فشل في إرسال الرسالة" });
     }
+  });
+
+  app.get("/api/subscription", isAuthenticated, async (req, res) => {
+    try {
+      const sub = await storage.getSubscription(getUserId(req));
+      res.json(sub || { plan: "free", status: "inactive" });
+    } catch (error) {
+      res.status(500).json({ message: "فشل في تحميل بيانات الاشتراك" });
+    }
+  });
+
+  app.post("/api/subscription/checkout", isAuthenticated, async (req, res) => {
+    try {
+      const { plan } = req.body;
+      if (!PLANS[plan]) return res.status(400).json({ message: "باقة غير صالحة" });
+
+      const userId = getUserId(req);
+      const userEmail = (req.user as any)?.claims?.email;
+
+      let sub = await storage.getSubscription(userId);
+      let customerId: string;
+
+      if (sub?.stripeCustomerId) {
+        customerId = sub.stripeCustomerId;
+      } else {
+        const customer = await stripe.customers.create({
+          email: userEmail || undefined,
+          metadata: { userId },
+        });
+        customerId = customer.id;
+        await storage.upsertSubscription({ userId, stripeCustomerId: customerId });
+      }
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ["card"],
+        mode: "subscription",
+        line_items: [{
+          price_data: {
+            currency: "sar",
+            product_data: { name: `مستندك - ${PLANS[plan].name}` },
+            unit_amount: PLANS[plan].priceAmount,
+            recurring: { interval: "month" },
+          },
+          quantity: 1,
+        }],
+        subscription_data: {
+          trial_period_days: 14,
+          metadata: { userId, plan },
+        },
+        success_url: `${baseUrl}/dashboard/settings?subscription=success`,
+        cancel_url: `${baseUrl}/dashboard/settings?subscription=cancelled`,
+        metadata: { userId, plan },
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Checkout error:", error);
+      res.status(500).json({ message: "فشل في إنشاء جلسة الدفع" });
+    }
+  });
+
+  app.post("/api/subscription/portal", isAuthenticated, async (req, res) => {
+    try {
+      const sub = await storage.getSubscription(getUserId(req));
+      if (!sub?.stripeCustomerId) return res.status(400).json({ message: "لا يوجد اشتراك" });
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.billingPortal.sessions.create({
+        customer: sub.stripeCustomerId,
+        return_url: `${baseUrl}/dashboard/settings`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Portal error:", error);
+      res.status(500).json({ message: "فشل في فتح بوابة الإدارة" });
+    }
+  });
+
+  app.post("/api/webhooks/stripe", async (req, res) => {
+    const sig = req.headers["stripe-signature"] as string;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    let event: Stripe.Event;
+    try {
+      if (webhookSecret) {
+        if (!sig) return res.status(400).json({ message: "Missing stripe-signature header" });
+        event = stripe.webhooks.constructEvent(req.rawBody as Buffer, sig, webhookSecret);
+      } else if (process.env.NODE_ENV === "production") {
+        console.error("STRIPE_WEBHOOK_SECRET is not set in production");
+        return res.status(500).json({ message: "Webhook not configured" });
+      } else {
+        event = req.body as Stripe.Event;
+      }
+    } catch (err: any) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).json({ message: "Webhook error" });
+    }
+
+    try {
+      switch (event.type) {
+        case "customer.subscription.created":
+        case "customer.subscription.updated": {
+          const subscription = event.data.object as Stripe.Subscription;
+          const customerId = subscription.customer as string;
+          const plan = (subscription.metadata?.plan) || "starter";
+          const priceId = subscription.items.data[0]?.price?.id || null;
+
+          await storage.updateSubscriptionByCustomerId(customerId, {
+            stripeSubscriptionId: subscription.id,
+            stripePriceId: priceId,
+            plan,
+            status: subscription.status === "active" || subscription.status === "trialing" ? "active" : subscription.status,
+            currentPeriodStart: new Date(subscription.current_period_start * 1000),
+            currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          });
+          break;
+        }
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object as Stripe.Subscription;
+          const customerId = subscription.customer as string;
+          await storage.updateSubscriptionByCustomerId(customerId, {
+            status: "cancelled",
+            plan: "free",
+            stripeSubscriptionId: null,
+            stripePriceId: null,
+          });
+          break;
+        }
+        case "invoice.payment_failed": {
+          const invoice = event.data.object as Stripe.Invoice;
+          const customerId = invoice.customer as string;
+          await storage.updateSubscriptionByCustomerId(customerId, {
+            status: "past_due",
+          });
+          break;
+        }
+      }
+      res.json({ received: true });
+    } catch (error) {
+      console.error("Webhook processing error:", error);
+      res.status(500).json({ message: "Webhook processing failed" });
+    }
+  });
+
+  app.get("/api/config/stripe", (req, res) => {
+    res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
   });
 
   return httpServer;

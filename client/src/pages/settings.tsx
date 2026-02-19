@@ -9,14 +9,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
-import { Settings, Loader2, Sun, Moon } from "lucide-react";
-import type { Profile } from "@shared/schema";
+import { Settings, Loader2, Sun, Moon, CreditCard, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import type { Profile, Subscription } from "@shared/schema";
+
+const PLAN_NAMES: Record<string, string> = {
+  free: "مجاني",
+  starter: "المبتدئ",
+  pro: "المحترف",
+  business: "الأعمال",
+};
+
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  active: { label: "نشط", color: "text-green-600" },
+  trialing: { label: "فترة تجريبية", color: "text-blue-600" },
+  past_due: { label: "متأخر الدفع", color: "text-orange-600" },
+  cancelled: { label: "ملغي", color: "text-red-600" },
+  inactive: { label: "غير مفعّل", color: "text-muted-foreground" },
+};
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { data: profile } = useQuery<Profile | null>({ queryKey: ["/api/profile"] });
+  const { data: subscription } = useQuery<Subscription & { plan: string; status: string }>({ queryKey: ["/api/subscription"] });
+  const [portalLoading, setPortalLoading] = useState(false);
 
   const [accountForm, setAccountForm] = useState({
     firstName: user?.firstName || "",
@@ -69,13 +86,37 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
+  const openPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await apiRequest("POST", "/api/subscription/portal");
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (e) {
+      toast({ title: "فشل في فتح بوابة الإدارة", variant: "destructive" });
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const handleSubscribe = async (planId: string) => {
+    try {
+      const res = await apiRequest("POST", "/api/subscription/checkout", { plan: planId });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (e) {
+      toast({ title: "فشل في إنشاء جلسة الدفع", variant: "destructive" });
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <h1 className="text-2xl font-bold flex items-center gap-2"><Settings className="h-6 w-6" /> الإعدادات</h1>
 
       <Tabs defaultValue="account">
-        <TabsList>
+        <TabsList className="flex-wrap gap-1">
           <TabsTrigger value="account">الحساب</TabsTrigger>
+          <TabsTrigger value="subscription">الاشتراك</TabsTrigger>
           <TabsTrigger value="billing">بيانات الفوترة</TabsTrigger>
           <TabsTrigger value="appearance">المظهر</TabsTrigger>
         </TabsList>
@@ -92,6 +133,68 @@ export default function SettingsPage() {
               <Button onClick={() => saveAccount.mutate(accountForm)} disabled={saveAccount.isPending} data-testid="button-save-account">
                 {saveAccount.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حفظ
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="subscription">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" /> الاشتراك</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+              {subscription && subscription.status !== "inactive" && subscription.plan !== "free" ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-md border">
+                      <p className="text-sm text-muted-foreground mb-1">الباقة الحالية</p>
+                      <p className="text-lg font-bold" data-testid="text-current-plan">{PLAN_NAMES[subscription.plan] || subscription.plan}</p>
+                    </div>
+                    <div className="p-4 rounded-md border">
+                      <p className="text-sm text-muted-foreground mb-1">الحالة</p>
+                      <p className={`text-lg font-bold flex items-center gap-2 ${STATUS_MAP[subscription.status]?.color || ""}`} data-testid="text-subscription-status">
+                        {subscription.status === "active" || subscription.status === "trialing" ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                        {STATUS_MAP[subscription.status]?.label || subscription.status}
+                      </p>
+                    </div>
+                  </div>
+                  {subscription.currentPeriodEnd && (
+                    <div className="p-4 rounded-md border">
+                      <p className="text-sm text-muted-foreground mb-1 flex items-center gap-1"><Clock className="h-4 w-4" /> تاريخ التجديد</p>
+                      <p className="font-medium" data-testid="text-renewal-date">
+                        {new Date(subscription.currentPeriodEnd).toLocaleDateString("ar-SA")}
+                        {subscription.cancelAtPeriodEnd && <span className="text-sm text-orange-600 mr-2">(سيتم الإلغاء عند التجديد)</span>}
+                      </p>
+                    </div>
+                  )}
+                  <Button onClick={openPortal} disabled={portalLoading} data-testid="button-manage-subscription">
+                    {portalLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                    إدارة الاشتراك
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-md border text-center">
+                    <p className="text-muted-foreground mb-2">لا يوجد اشتراك نشط</p>
+                    <p className="text-sm text-muted-foreground">اختر باقة للبدء مع تجربة مجانية 14 يوم</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[
+                      { id: "starter", name: "المبتدئ", price: "29" },
+                      { id: "pro", name: "المحترف", price: "59" },
+                      { id: "business", name: "الأعمال", price: "99" },
+                    ].map((plan) => (
+                      <Card key={plan.id} className={plan.id === "pro" ? "border-primary" : ""}>
+                        <CardContent className="pt-4 text-center space-y-3">
+                          <p className="font-bold">{plan.name}</p>
+                          <p><span className="text-2xl font-bold">{plan.price}</span> <span className="text-sm text-muted-foreground">ر.س/شهرياً</span></p>
+                          <Button variant={plan.id === "pro" ? "default" : "outline"} className="w-full" onClick={() => handleSubscribe(plan.id)} data-testid={`button-subscribe-${plan.id}`}>
+                            اشترك الآن
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

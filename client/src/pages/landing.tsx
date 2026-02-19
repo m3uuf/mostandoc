@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Users, FileText, Receipt, FolderKanban, Globe, ArrowLeft, CheckCircle } from "lucide-react";
+import { Users, FileText, Receipt, FolderKanban, Globe, ArrowLeft, CheckCircle, Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import starIcon from "@assets/Asset_4@4x_1771471809796.png";
 
@@ -20,12 +23,32 @@ const steps = [
 ];
 
 const plans = [
-  { name: "المبتدئ", price: "29", period: "ر.س / شهرياً", features: ["15 عميل", "20 فاتورة شهرياً", "5 عقود", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ الآن", popular: false },
-  { name: "المحترف", price: "59", period: "ر.س / شهرياً", features: ["عملاء غير محدودين", "فواتير غير محدودة", "قوالب عقود جاهزة", "تخصيص الصفحة العامة", "تصدير PDF"], cta: "اشترك الآن", popular: true },
-  { name: "الأعمال", price: "99", period: "ر.س / شهرياً", features: ["كل مميزات المحترف", "فريق عمل (حتى 3 أعضاء)", "دومين مخصص", "ربط API", "دعم أولوي"], cta: "تواصل معنا", popular: false },
+  { planId: "starter", name: "المبتدئ", price: "29", period: "ر.س / شهرياً", features: ["15 عميل", "20 فاتورة شهرياً", "5 عقود", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ الآن", popular: false },
+  { planId: "pro", name: "المحترف", price: "59", period: "ر.س / شهرياً", features: ["عملاء غير محدودين", "فواتير غير محدودة", "قوالب عقود جاهزة", "تخصيص الصفحة العامة", "تصدير PDF"], cta: "اشترك الآن", popular: true },
+  { planId: "business", name: "الأعمال", price: "99", period: "ر.س / شهرياً", features: ["كل مميزات المحترف", "فريق عمل (حتى 3 أعضاء)", "دومين مخصص", "ربط API", "دعم أولوي"], cta: "تواصل معنا", popular: false },
 ];
 
 export default function Landing() {
+  const { user } = useAuth();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleSubscribe = async (planId: string) => {
+    if (!user) {
+      window.location.href = "/api/login";
+      return;
+    }
+    setLoadingPlan(planId);
+    try {
+      const res = await apiRequest("POST", "/api/subscription/checkout", { plan: planId });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (e) {
+      console.error("Checkout error:", e);
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
@@ -123,8 +146,15 @@ export default function Landing() {
                     </li>
                   ))}
                 </ul>
-                <Button variant={plan.popular ? "default" : "outline"} className="w-full" asChild>
-                  <a href="/api/login" data-testid={`button-plan-${plan.name}`}>{plan.cta}</a>
+                <Button
+                  variant={plan.popular ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => handleSubscribe(plan.planId)}
+                  disabled={loadingPlan === plan.planId}
+                  data-testid={`button-plan-${plan.planId}`}
+                >
+                  {loadingPlan === plan.planId && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                  {plan.cta}
                 </Button>
               </CardContent>
             </Card>

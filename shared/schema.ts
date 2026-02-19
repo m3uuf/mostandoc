@@ -169,6 +169,21 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [index("idx_notifications_user_id").on(table.userId)]);
 
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique(),
+  stripeCustomerId: varchar("stripe_customer_id").notNull(),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  stripePriceId: varchar("stripe_price_id"),
+  plan: text("plan").default("free"),
+  status: text("status").default("inactive"),
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [index("idx_subscriptions_user_id").on(table.userId), index("idx_subscriptions_stripe_customer_id").on(table.stripeCustomerId)]);
+
 export const insertProfileSchema = createInsertSchema(profiles).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
@@ -203,3 +218,4 @@ export type InsertContactMessage = z.infer<typeof insertContactMessageSchema>;
 export type ContactMessage = typeof contactMessages.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;
