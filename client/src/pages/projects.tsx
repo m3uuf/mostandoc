@@ -52,7 +52,8 @@ export default function ProjectsPage() {
     enabled: !!detailOpen,
   });
 
-  const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const { data: clientsResult } = useQuery<{ data: Client[] }>({ queryKey: ["/api/clients"] });
+  const clients = clientsResult?.data || [];
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/projects", data),

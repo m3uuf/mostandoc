@@ -45,7 +45,8 @@ export default function InvoicesPage() {
   });
   const { data: invoicesList = [], total: paginationTotal = 0, totalPages = 0, limit: paginationLimit = 20 } = result || {};
 
-  const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const { data: clientsResult } = useQuery<{ data: Client[] }>({ queryKey: ["/api/clients"] });
+  const clients = clientsResult?.data || [];
   const { data: profile } = useQuery<Profile>({ queryKey: ["/api/profile"] });
   const pdfRef = useRef<HTMLDivElement>(null);
   const [pdfInvoice, setPdfInvoice] = useState<any>(null);
