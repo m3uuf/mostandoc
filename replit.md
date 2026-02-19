@@ -11,10 +11,11 @@ Arabic-first (RTL) business management web application for freelancers and small
 - **Design**: RTL layout, dark/light mode, Mustanadak brand colors
 
 ## Brand Colors
-- Primary (Dark Blue): #1B4F72 → HSL(204, 61%, 28%)
-- Secondary (Light Blue): #2E86C1 → HSL(204, 62%, 47%)
+- Primary (Blue): #3B5FE5 → HSL(228, 74%, 56%)
+- Accent (Orange): #E8752A → HSL(22, 79%, 54%)
+- Cream: #F5DFC0 → HSL(35, 79%, 85%)
 - Success (Green): #27AE60 → HSL(145, 63%, 42%)
-- Accent (Orange): #E8752A → HSL(23, 81%, 54%)
+- Logo: attached_assets/Asset_1@4x (app icon), Asset_4@4x (star icon)
 
 ## Project Structure
 ```

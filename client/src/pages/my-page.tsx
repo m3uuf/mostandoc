@@ -134,8 +134,8 @@ function FileUploadButton({ onUploaded, currentUrl, label, acceptTypes = "image/
 }
 
 const PRESET_COLORS = [
-  { label: "أزرق داكن", value: "#1B4F72" },
-  { label: "أزرق فاتح", value: "#2E86C1" },
+  { label: "أزرق مستندك", value: "#3B5FE5" },
+  { label: "أزرق فاتح", value: "#5B8DEF" },
   { label: "أخضر", value: "#27AE60" },
   { label: "برتقالي", value: "#E8752A" },
   { label: "بنفسجي", value: "#8E44AD" },
@@ -185,8 +185,8 @@ function ColorPicker({ label, value, onChange, testId }: { label: string; value:
 
 function HeroPreview({ form }: { form: any }) {
   const headerStyle = form.headerStyle || "gradient";
-  const primaryColor = form.primaryColor || "#1B4F72";
-  const accentColor = form.accentColor || "#2E86C1";
+  const primaryColor = form.primaryColor || "#3B5FE5";
+  const accentColor = form.accentColor || "#E8752A";
 
   const heroStyle: React.CSSProperties = {};
   if (headerStyle === "gradient") {
@@ -245,8 +245,8 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
     emailPublic: profile?.emailPublic || "", phonePublic: profile?.phonePublic || "",
     website: profile?.website || "", isPublic: profile?.isPublic ?? true,
     socialLinks: profile?.socialLinks || {},
-    primaryColor: profile?.primaryColor || "#1B4F72",
-    accentColor: profile?.accentColor || "#2E86C1",
+    primaryColor: profile?.primaryColor || "#3B5FE5",
+    accentColor: profile?.accentColor || "#E8752A",
     headerStyle: profile?.headerStyle || "gradient",
     coverImageUrl: profile?.coverImageUrl || "",
     themeMode: profile?.themeMode || "light",
@@ -265,8 +265,8 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
         emailPublic: profile.emailPublic || "", phonePublic: profile.phonePublic || "",
         website: profile.website || "", isPublic: profile.isPublic ?? true,
         socialLinks: profile.socialLinks || {},
-        primaryColor: profile.primaryColor || "#1B4F72",
-        accentColor: profile.accentColor || "#2E86C1",
+        primaryColor: profile.primaryColor || "#3B5FE5",
+        accentColor: profile.accentColor || "#E8752A",
         headerStyle: profile.headerStyle || "gradient",
         coverImageUrl: profile.coverImageUrl || "",
         themeMode: profile.themeMode || "light",

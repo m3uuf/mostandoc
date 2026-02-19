@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown
 } from "lucide-react";
+import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -41,9 +42,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <Link href="/dashboard" data-testid="link-logo">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-[hsl(204,63%,47%)] flex items-center justify-center text-white font-bold text-sm">
-              م
-            </div>
+            <img src={logoIcon} alt="مستندك" className="w-8 h-8 rounded-md object-cover" />
             <span className="font-bold text-lg group-data-[collapsible=icon]:hidden">مستندك</span>
           </div>
         </Link>

@@ -72,8 +72,8 @@ export default function PublicProfile() {
   const socialLinks = (profile.socialLinks || {}) as Record<string, string>;
   const socialIcons: Record<string, any> = { twitter: SiX, linkedin: SiLinkedin, instagram: SiInstagram, whatsapp: SiWhatsapp };
 
-  const primaryColor = profile.primaryColor || "#1B4F72";
-  const accentColor = profile.accentColor || "#2E86C1";
+  const primaryColor = profile.primaryColor || "#3B5FE5";
+  const accentColor = profile.accentColor || "#E8752A";
   const headerStyle = profile.headerStyle || "gradient";
   const coverImageUrl = profile.coverImageUrl || "";
   const themeMode = profile.themeMode || "light";

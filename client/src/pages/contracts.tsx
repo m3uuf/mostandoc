@@ -246,16 +246,16 @@ export default function ContractsPage() {
       {pdfContract && (
         <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
           <div ref={pdfRef} style={{ width: "794px", padding: "40px", fontFamily: "'IBM Plex Sans Arabic', sans-serif", direction: "rtl", backgroundColor: "#ffffff", color: "#1a1a1a" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #1B4F72", paddingBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #3B5FE5", paddingBottom: "20px" }}>
               <div>
-                <h1 style={{ fontSize: "24px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{pdfContract.title}</h1>
+                <h1 style={{ fontSize: "24px", fontWeight: "bold", color: "#3B5FE5", margin: 0 }}>{pdfContract.title}</h1>
                 <p style={{ fontSize: "13px", margin: "5px 0 0", color: "#777" }}>
                   <span style={{ fontWeight: "600", color: "#555" }}>الحالة: </span>
                   {statusLabels[pdfContract.status || "draft"]}
                 </p>
               </div>
               <div style={{ textAlign: "left" }}>
-                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{profile.companyName}</p>}
+                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#3B5FE5", margin: 0 }}>{profile.companyName}</p>}
                 {profile?.fullName && <p style={{ fontSize: "14px", margin: "3px 0 0", color: "#555" }}>{profile.fullName}</p>}
                 {profile?.companyAddress && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.companyAddress}</p>}
                 {profile?.taxNumber && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>الرقم الضريبي: {profile.taxNumber}</p>}
@@ -281,7 +281,7 @@ export default function ContractsPage() {
                 {pdfContract.value && (
                   <div style={{ marginBottom: "5px" }}>
                     <span style={{ fontSize: "12px", color: "#777" }}>القيمة: </span>
-                    <span style={{ fontSize: "14px", fontWeight: "bold", color: "#1B4F72" }}>{Number(pdfContract.value).toLocaleString("ar-SA")} {pdfContract.currency === "SAR" ? "ر.س" : pdfContract.currency}</span>
+                    <span style={{ fontSize: "14px", fontWeight: "bold", color: "#3B5FE5" }}>{Number(pdfContract.value).toLocaleString("ar-SA")} {pdfContract.currency === "SAR" ? "ر.س" : pdfContract.currency}</span>
                   </div>
                 )}
                 <div style={{ marginBottom: "5px" }}>
@@ -297,12 +297,12 @@ export default function ContractsPage() {
 
             {pdfContract.content && (
               <div style={{ borderTop: "1px solid #e5e5e5", paddingTop: "20px", marginBottom: "30px" }}>
-                <h3 style={{ fontSize: "16px", fontWeight: "bold", color: "#1B4F72", marginBottom: "15px" }}>محتوى العقد</h3>
+                <h3 style={{ fontSize: "16px", fontWeight: "bold", color: "#3B5FE5", marginBottom: "15px" }}>محتوى العقد</h3>
                 <div style={{ fontSize: "14px", lineHeight: "1.8", color: "#333", whiteSpace: "pre-wrap" }}>{pdfContract.content}</div>
               </div>
             )}
 
-            <div style={{ borderTop: "2px solid #1B4F72", paddingTop: "20px", marginTop: "40px" }}>
+            <div style={{ borderTop: "2px solid #3B5FE5", paddingTop: "20px", marginTop: "40px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "60px" }}>
                 <div style={{ textAlign: "center", width: "200px" }}>
                   <p style={{ fontSize: "13px", fontWeight: "600", color: "#555", marginBottom: "40px" }}>الطرف الأول</p>

@@ -317,13 +317,13 @@ export default function InvoicesPage() {
       {pdfInvoice && (
         <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
           <div ref={pdfRef} style={{ width: "794px", padding: "40px", fontFamily: "'IBM Plex Sans Arabic', sans-serif", direction: "rtl", backgroundColor: "#ffffff", color: "#1a1a1a" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #1B4F72", paddingBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #3B5FE5", paddingBottom: "20px" }}>
               <div>
-                <h1 style={{ fontSize: "28px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>فاتورة</h1>
+                <h1 style={{ fontSize: "28px", fontWeight: "bold", color: "#3B5FE5", margin: 0 }}>فاتورة</h1>
                 <p style={{ fontSize: "18px", fontWeight: "600", margin: "5px 0 0", color: "#333" }}>{pdfInvoice.invoiceNumber}</p>
               </div>
               <div style={{ textAlign: "left" }}>
-                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{profile.companyName}</p>}
+                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#3B5FE5", margin: 0 }}>{profile.companyName}</p>}
                 {profile?.fullName && <p style={{ fontSize: "14px", margin: "3px 0 0", color: "#555" }}>{profile.fullName}</p>}
                 {profile?.companyAddress && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.companyAddress}</p>}
                 {profile?.taxNumber && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>الرقم الضريبي: {profile.taxNumber}</p>}
@@ -334,7 +334,7 @@ export default function InvoicesPage() {
 
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "25px" }}>
               <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: "14px", fontWeight: "bold", color: "#1B4F72", marginBottom: "5px" }}>العميل</h3>
+                <h3 style={{ fontSize: "14px", fontWeight: "bold", color: "#3B5FE5", marginBottom: "5px" }}>العميل</h3>
                 <p style={{ fontSize: "14px", margin: 0, color: "#333" }}>{pdfInvoice.clientName || "-"}</p>
               </div>
               <div style={{ textAlign: "left" }}>
@@ -355,7 +355,7 @@ export default function InvoicesPage() {
 
             <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
               <thead>
-                <tr style={{ backgroundColor: "#1B4F72" }}>
+                <tr style={{ backgroundColor: "#3B5FE5" }}>
                   <th style={{ padding: "10px 12px", textAlign: "right", color: "#fff", fontSize: "13px", fontWeight: "600" }}>#</th>
                   <th style={{ padding: "10px 12px", textAlign: "right", color: "#fff", fontSize: "13px", fontWeight: "600" }}>الوصف</th>
                   <th style={{ padding: "10px 12px", textAlign: "center", color: "#fff", fontSize: "13px", fontWeight: "600" }}>الكمية</th>
@@ -377,7 +377,7 @@ export default function InvoicesPage() {
             </table>
 
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "25px" }}>
-              <div style={{ width: "280px", borderTop: "2px solid #1B4F72", paddingTop: "10px" }}>
+              <div style={{ width: "280px", borderTop: "2px solid #3B5FE5", paddingTop: "10px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: "13px" }}>
                   <span style={{ color: "#555" }}>المجموع الفرعي:</span>
                   <span style={{ color: "#333" }}>{Number(pdfInvoice.subtotal).toLocaleString("ar-SA")} ر.س</span>
@@ -386,9 +386,9 @@ export default function InvoicesPage() {
                   <span style={{ color: "#555" }}>ضريبة القيمة المضافة ({pdfInvoice.vatRate}%):</span>
                   <span style={{ color: "#333" }}>{Number(pdfInvoice.vatAmount).toLocaleString("ar-SA")} ر.س</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: "16px", fontWeight: "bold", borderTop: "2px solid #1B4F72", marginTop: "5px" }}>
-                  <span style={{ color: "#1B4F72" }}>الإجمالي:</span>
-                  <span style={{ color: "#1B4F72" }}>{Number(pdfInvoice.total).toLocaleString("ar-SA")} ر.س</span>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: "16px", fontWeight: "bold", borderTop: "2px solid #3B5FE5", marginTop: "5px" }}>
+                  <span style={{ color: "#3B5FE5" }}>الإجمالي:</span>
+                  <span style={{ color: "#3B5FE5" }}>{Number(pdfInvoice.total).toLocaleString("ar-SA")} ر.س</span>
                 </div>
               </div>
             </div>

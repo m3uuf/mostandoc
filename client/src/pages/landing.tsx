@@ -2,6 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Users, FileText, Receipt, FolderKanban, Globe, ArrowLeft, CheckCircle } from "lucide-react";
+import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+import starIcon from "@assets/Asset_4@4x_1771471809796.png";
 
 const features = [
   { icon: Users, title: "إدارة العملاء", desc: "أضف وتابع عملاءك بسهولة مع معلومات التواصل والملاحظات" },
@@ -29,7 +31,7 @@ export default function Landing() {
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="container mx-auto flex items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-[hsl(204,63%,47%)] flex items-center justify-center text-white font-bold text-sm">م</div>
+            <img src={logoIcon} alt="مستندك" className="w-8 h-8 rounded-md object-cover" />
             <span className="font-bold text-lg">مستندك</span>
           </div>
           <div className="flex items-center gap-2">
@@ -45,8 +47,9 @@ export default function Landing() {
       </header>
 
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-bl from-[hsl(204,61%,28%)] via-[hsl(204,50%,20%)] to-[hsl(210,30%,12%)]" />
+        <div className="absolute inset-0 bg-gradient-to-bl from-[#3B5FE5] via-[#2a45b0] to-[#1a2d6e]" />
         <div className="relative container mx-auto px-4 py-20 md:py-32 text-center text-white">
+          <img src={starIcon} alt="" className="w-10 h-10 mx-auto mb-4 opacity-80" />
           <h1 className="text-3xl md:text-5xl font-bold mb-6 leading-tight">
             أدِر أعمالك كلها من مكان واحد
           </h1>
@@ -54,7 +57,7 @@ export default function Landing() {
             منصة متكاملة للمستقلين وأصحاب المشاريع الصغيرة لإدارة العملاء والعقود والفواتير والمشاريع باحترافية
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
-            <Button size="lg" className="bg-[hsl(22,79%,54%)] border-[hsl(22,79%,54%)]" asChild>
+            <Button size="lg" className="bg-[#E8752A] border-[#E8752A]" asChild>
               <a href="/api/login" data-testid="button-hero-cta">
                 ابدأ مجاناً
                 <ArrowLeft className="mr-2 h-5 w-5" />
@@ -132,7 +135,7 @@ export default function Landing() {
       <footer className="border-t bg-muted/30">
         <div className="container mx-auto px-4 py-8 text-center text-sm text-muted-foreground">
           <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="w-6 h-6 rounded bg-[hsl(204,63%,47%)] flex items-center justify-center text-white font-bold text-xs">م</div>
+            <img src={logoIcon} alt="مستندك" className="w-6 h-6 rounded object-cover" />
             <span className="font-semibold text-foreground">مستندك</span>
           </div>
           <p>جميع الحقوق محفوظة &copy; {new Date().getFullYear()} مستندك</p>
