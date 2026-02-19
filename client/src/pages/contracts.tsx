@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, FileText, Pencil, Trash2 } from "lucide-react";
-import type { Contract, Client } from "@shared/schema";
+import { Plus, Loader2, FileText, Pencil, Trash2, Download } from "lucide-react";
+import { generatePdfFromElement } from "@/lib/pdf-generator";
+import type { Contract, Client, Profile } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { draft: "مسودة", active: "نشط", completed: "مكتمل", expired: "منتهي", terminated: "ملغي" };
 const statusColors: Record<string, "default" | "secondary" | "destructive"> = { draft: "secondary", active: "default", completed: "default", expired: "destructive", terminated: "destructive" };
@@ -42,6 +43,10 @@ export default function ContractsPage() {
   });
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const { data: profile } = useQuery<Profile>({ queryKey: ["/api/profile"] });
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const [pdfContract, setPdfContract] = useState<any>(null);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/contracts", data),
@@ -104,6 +109,23 @@ export default function ContractsPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
+  const downloadContractPdf = useCallback(async (contract: Contract & { clientName?: string }) => {
+    setPdfGenerating(true);
+    try {
+      setPdfContract(contract);
+      await new Promise((r) => setTimeout(r, 300));
+      if (pdfRef.current) {
+        const safeTitle = contract.title.replace(/[/\\?%*:|"<>]/g, "-");
+        await generatePdfFromElement(pdfRef.current, `عقد-${safeTitle}.pdf`);
+      }
+    } catch {
+      toast({ title: "فشل تحميل العقد", variant: "destructive" });
+    } finally {
+      setPdfGenerating(false);
+      setPdfContract(null);
+    }
+  }, [toast]);
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -142,6 +164,7 @@ export default function ContractsPage() {
                   <span>{contract.endDate || "-"}</span>
                 </div>
                 <div className="flex items-center gap-1 pt-1">
+                  <Button size="icon" variant="ghost" onClick={() => downloadContractPdf(contract)} disabled={pdfGenerating} data-testid={`button-pdf-contract-${contract.id}`}><Download className="h-4 w-4" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => openEdit(contract)} data-testid={`button-edit-contract-${contract.id}`}><Pencil className="h-4 w-4" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(contract.id)} data-testid={`button-delete-contract-${contract.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                 </div>
@@ -219,6 +242,89 @@ export default function ContractsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {pdfContract && (
+        <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
+          <div ref={pdfRef} style={{ width: "794px", padding: "40px", fontFamily: "'IBM Plex Sans Arabic', sans-serif", direction: "rtl", backgroundColor: "#ffffff", color: "#1a1a1a" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #1B4F72", paddingBottom: "20px" }}>
+              <div>
+                <h1 style={{ fontSize: "24px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{pdfContract.title}</h1>
+                <p style={{ fontSize: "13px", margin: "5px 0 0", color: "#777" }}>
+                  <span style={{ fontWeight: "600", color: "#555" }}>الحالة: </span>
+                  {statusLabels[pdfContract.status || "draft"]}
+                </p>
+              </div>
+              <div style={{ textAlign: "left" }}>
+                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{profile.companyName}</p>}
+                {profile?.fullName && <p style={{ fontSize: "14px", margin: "3px 0 0", color: "#555" }}>{profile.fullName}</p>}
+                {profile?.companyAddress && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.companyAddress}</p>}
+                {profile?.taxNumber && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>الرقم الضريبي: {profile.taxNumber}</p>}
+                {profile?.emailPublic && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.emailPublic}</p>}
+                {profile?.phonePublic && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.phonePublic}</p>}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "30px", marginBottom: "25px" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ marginBottom: "10px" }}>
+                  <span style={{ fontSize: "12px", color: "#777" }}>العميل: </span>
+                  <span style={{ fontSize: "14px", fontWeight: "600", color: "#333" }}>{pdfContract.clientName || "-"}</span>
+                </div>
+                {pdfContract.description && (
+                  <div>
+                    <span style={{ fontSize: "12px", color: "#777" }}>الوصف: </span>
+                    <span style={{ fontSize: "13px", color: "#333" }}>{pdfContract.description}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: "left", minWidth: "200px" }}>
+                {pdfContract.value && (
+                  <div style={{ marginBottom: "5px" }}>
+                    <span style={{ fontSize: "12px", color: "#777" }}>القيمة: </span>
+                    <span style={{ fontSize: "14px", fontWeight: "bold", color: "#1B4F72" }}>{Number(pdfContract.value).toLocaleString("ar-SA")} {pdfContract.currency === "SAR" ? "ر.س" : pdfContract.currency}</span>
+                  </div>
+                )}
+                <div style={{ marginBottom: "5px" }}>
+                  <span style={{ fontSize: "12px", color: "#777" }}>تاريخ البداية: </span>
+                  <span style={{ fontSize: "13px", color: "#333" }}>{pdfContract.startDate || "-"}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: "12px", color: "#777" }}>تاريخ النهاية: </span>
+                  <span style={{ fontSize: "13px", color: "#333" }}>{pdfContract.endDate || "-"}</span>
+                </div>
+              </div>
+            </div>
+
+            {pdfContract.content && (
+              <div style={{ borderTop: "1px solid #e5e5e5", paddingTop: "20px", marginBottom: "30px" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: "bold", color: "#1B4F72", marginBottom: "15px" }}>محتوى العقد</h3>
+                <div style={{ fontSize: "14px", lineHeight: "1.8", color: "#333", whiteSpace: "pre-wrap" }}>{pdfContract.content}</div>
+              </div>
+            )}
+
+            <div style={{ borderTop: "2px solid #1B4F72", paddingTop: "20px", marginTop: "40px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "60px" }}>
+                <div style={{ textAlign: "center", width: "200px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: "600", color: "#555", marginBottom: "40px" }}>الطرف الأول</p>
+                  <div style={{ borderTop: "1px solid #999", paddingTop: "5px" }}>
+                    <p style={{ fontSize: "12px", color: "#777", margin: 0 }}>التوقيع</p>
+                  </div>
+                </div>
+                <div style={{ textAlign: "center", width: "200px" }}>
+                  <p style={{ fontSize: "13px", fontWeight: "600", color: "#555", marginBottom: "40px" }}>الطرف الثاني</p>
+                  <div style={{ borderTop: "1px solid #999", paddingTop: "5px" }}>
+                    <p style={{ fontSize: "12px", color: "#777", margin: 0 }}>التوقيع</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ textAlign: "center", borderTop: "1px solid #e5e5e5", paddingTop: "15px", fontSize: "11px", color: "#999" }}>
+              <p style={{ margin: 0 }}>تم إنشاء هذا العقد بواسطة مستندك</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

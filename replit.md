@@ -61,6 +61,14 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Portfolio accepts image and video uploads
 - Files stored at /objects/uploads/<uuid> paths
 
+## PDF Export
+- Client-side PDF generation using jspdf + html2canvas
+- Invoices: Download button in actions column, includes company info, items table, VAT, totals
+- Contracts: Download button on card, includes contract content, signature areas
+- PDFs use IBM Plex Sans Arabic font, Mustanadak brand colors, RTL layout
+- Profile data (company name, address, tax number) shown in PDF headers
+
 ## Recent Changes
+- 2026-02-19: Added PDF download for invoices and contracts
 - 2026-02-19: Added tab locking (services/portfolio require profile), file upload support for services and portfolio
 - 2026-02-19: Initial full build of all pages and features

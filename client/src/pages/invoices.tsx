@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, Receipt, Pencil, Trash2, X } from "lucide-react";
-import type { Invoice, Client } from "@shared/schema";
+import { Plus, Loader2, Receipt, Pencil, Trash2, X, Download } from "lucide-react";
+import { generatePdfFromElement } from "@/lib/pdf-generator";
+import type { Invoice, Client, Profile } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { draft: "مسودة", sent: "مرسلة", paid: "مدفوعة", overdue: "متأخرة", cancelled: "ملغاة" };
 const statusColors: Record<string, "default" | "secondary" | "destructive"> = { draft: "secondary", sent: "default", paid: "default", overdue: "destructive", cancelled: "destructive" };
@@ -39,6 +40,10 @@ export default function InvoicesPage() {
   });
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const { data: profile } = useQuery<Profile>({ queryKey: ["/api/profile"] });
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const [pdfInvoice, setPdfInvoice] = useState<any>(null);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/invoices", data),
@@ -135,6 +140,26 @@ export default function InvoicesPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
+  const downloadInvoicePdf = useCallback(async (invoice: Invoice & { clientName?: string }) => {
+    setPdfGenerating(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`, { credentials: "include" });
+      const data = await res.json();
+      setPdfInvoice({ ...data, clientName: invoice.clientName });
+      await new Promise((r) => setTimeout(r, 300));
+      if (pdfRef.current) {
+        await generatePdfFromElement(pdfRef.current, `فاتورة-${invoice.invoiceNumber}.pdf`);
+      }
+    } catch {
+      toast({ title: "فشل تحميل الفاتورة", variant: "destructive" });
+    } finally {
+      setPdfGenerating(false);
+      setPdfInvoice(null);
+    }
+  }, [toast]);
+
+  const paymentMethodLabels: Record<string, string> = { bank_transfer: "تحويل بنكي", cash: "نقدي", electronic: "إلكتروني" };
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -180,6 +205,7 @@ export default function InvoicesPage() {
                     <td className="p-3 hidden md:table-cell text-muted-foreground">{inv.dueDate || "-"}</td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => downloadInvoicePdf(inv)} disabled={pdfGenerating} data-testid={`button-pdf-invoice-${inv.id}`}><Download className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => openEdit(inv)}><Pencil className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(inv.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
@@ -287,6 +313,109 @@ export default function InvoicesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {pdfInvoice && (
+        <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
+          <div ref={pdfRef} style={{ width: "794px", padding: "40px", fontFamily: "'IBM Plex Sans Arabic', sans-serif", direction: "rtl", backgroundColor: "#ffffff", color: "#1a1a1a" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "30px", borderBottom: "3px solid #1B4F72", paddingBottom: "20px" }}>
+              <div>
+                <h1 style={{ fontSize: "28px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>فاتورة</h1>
+                <p style={{ fontSize: "18px", fontWeight: "600", margin: "5px 0 0", color: "#333" }}>{pdfInvoice.invoiceNumber}</p>
+              </div>
+              <div style={{ textAlign: "left" }}>
+                {profile?.companyName && <p style={{ fontSize: "18px", fontWeight: "bold", color: "#1B4F72", margin: 0 }}>{profile.companyName}</p>}
+                {profile?.fullName && <p style={{ fontSize: "14px", margin: "3px 0 0", color: "#555" }}>{profile.fullName}</p>}
+                {profile?.companyAddress && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.companyAddress}</p>}
+                {profile?.taxNumber && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>الرقم الضريبي: {profile.taxNumber}</p>}
+                {profile?.emailPublic && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.emailPublic}</p>}
+                {profile?.phonePublic && <p style={{ fontSize: "12px", margin: "3px 0 0", color: "#777" }}>{profile.phonePublic}</p>}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "25px" }}>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: "14px", fontWeight: "bold", color: "#1B4F72", marginBottom: "5px" }}>العميل</h3>
+                <p style={{ fontSize: "14px", margin: 0, color: "#333" }}>{pdfInvoice.clientName || "-"}</p>
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ marginBottom: "5px" }}>
+                  <span style={{ fontSize: "12px", color: "#777" }}>تاريخ الإصدار: </span>
+                  <span style={{ fontSize: "13px", color: "#333" }}>{pdfInvoice.issueDate || "-"}</span>
+                </div>
+                <div style={{ marginBottom: "5px" }}>
+                  <span style={{ fontSize: "12px", color: "#777" }}>تاريخ الاستحقاق: </span>
+                  <span style={{ fontSize: "13px", color: "#333" }}>{pdfInvoice.dueDate || "-"}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: "12px", color: "#777" }}>الحالة: </span>
+                  <span style={{ fontSize: "13px", fontWeight: "bold", color: pdfInvoice.status === "paid" ? "#27AE60" : pdfInvoice.status === "overdue" ? "#E74C3C" : "#333" }}>{statusLabels[pdfInvoice.status || "draft"]}</span>
+                </div>
+              </div>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#1B4F72" }}>
+                  <th style={{ padding: "10px 12px", textAlign: "right", color: "#fff", fontSize: "13px", fontWeight: "600" }}>#</th>
+                  <th style={{ padding: "10px 12px", textAlign: "right", color: "#fff", fontSize: "13px", fontWeight: "600" }}>الوصف</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", color: "#fff", fontSize: "13px", fontWeight: "600" }}>الكمية</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#fff", fontSize: "13px", fontWeight: "600" }}>سعر الوحدة</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", color: "#fff", fontSize: "13px", fontWeight: "600" }}>المجموع</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pdfInvoice.items || []).map((item: any, idx: number) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid #e5e5e5", backgroundColor: idx % 2 === 0 ? "#f9f9f9" : "#fff" }}>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", color: "#555" }}>{idx + 1}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", color: "#333" }}>{item.description}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", color: "#333", textAlign: "center" }}>{item.quantity}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", color: "#333", textAlign: "left" }}>{Number(item.unitPrice).toLocaleString("ar-SA")} ر.س</td>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", fontWeight: "600", color: "#333", textAlign: "left" }}>{Number(item.total).toLocaleString("ar-SA")} ر.س</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "25px" }}>
+              <div style={{ width: "280px", borderTop: "2px solid #1B4F72", paddingTop: "10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: "13px" }}>
+                  <span style={{ color: "#555" }}>المجموع الفرعي:</span>
+                  <span style={{ color: "#333" }}>{Number(pdfInvoice.subtotal).toLocaleString("ar-SA")} ر.س</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: "13px" }}>
+                  <span style={{ color: "#555" }}>ضريبة القيمة المضافة ({pdfInvoice.vatRate}%):</span>
+                  <span style={{ color: "#333" }}>{Number(pdfInvoice.vatAmount).toLocaleString("ar-SA")} ر.س</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: "16px", fontWeight: "bold", borderTop: "2px solid #1B4F72", marginTop: "5px" }}>
+                  <span style={{ color: "#1B4F72" }}>الإجمالي:</span>
+                  <span style={{ color: "#1B4F72" }}>{Number(pdfInvoice.total).toLocaleString("ar-SA")} ر.س</span>
+                </div>
+              </div>
+            </div>
+
+            {(pdfInvoice.paymentMethod || pdfInvoice.notes) && (
+              <div style={{ borderTop: "1px solid #e5e5e5", paddingTop: "15px", marginBottom: "20px" }}>
+                {pdfInvoice.paymentMethod && (
+                  <p style={{ fontSize: "13px", margin: "0 0 5px", color: "#555" }}>
+                    <span style={{ fontWeight: "600" }}>طريقة الدفع: </span>
+                    {paymentMethodLabels[pdfInvoice.paymentMethod] || pdfInvoice.paymentMethod}
+                  </p>
+                )}
+                {pdfInvoice.notes && (
+                  <div>
+                    <p style={{ fontSize: "13px", fontWeight: "600", margin: "10px 0 5px", color: "#555" }}>ملاحظات:</p>
+                    <p style={{ fontSize: "12px", color: "#777", whiteSpace: "pre-wrap", margin: 0 }}>{pdfInvoice.notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ textAlign: "center", borderTop: "1px solid #e5e5e5", paddingTop: "15px", fontSize: "11px", color: "#999" }}>
+              <p style={{ margin: 0 }}>تم إنشاء هذه الفاتورة بواسطة مستندك</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
