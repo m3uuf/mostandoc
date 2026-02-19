@@ -1,0 +1,227 @@
+Fix the following 6 issues in the project. Do them one by one:
+
+-----
+
+## 1. Add Rate Limiting to API (HIGH PRIORITY - Security)
+
+Install `express-rate-limit` and add rate limiting middleware to protect the API from abuse:
+
+- General API limit: 100 requests per 15 minutes per IP
+- Auth routes (/api/login, /api/callback): 10 requests per 15 minutes per IP
+- Public contact form (/api/public/:username/contact): 5 requests per 15 minutes per IP
+
+Add this in `server/routes.ts` or `server/index.ts` before the routes are registered.
+
+-----
+
+## 2. Update Landing Page Pricing (HIGH PRIORITY - Business)
+
+In `client/src/pages/landing.tsx`, update the `plans` array to match the new pricing:
+
+OLD:
+
+```
+{ name: "مجاني", price: "0", period: "مجاناً للأبد", features: ["5 عملاء", "10 فواتير شهرياً", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ مجاناً" },
+{ name: "بروفيشنال", price: "49", period: "ر.س / شهرياً", ... },
+{ name: "أعمال", price: "99", period: "ر.س / شهرياً", ... },
+```
+
+NEW:
+
+```
+{ name: "المبتدئ", price: "29", period: "ر.س / شهرياً", features: ["15 عميل", "20 فاتورة شهرياً", "5 عقود", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ الآن", popular: false },
+{ name: "المحترف", price: "59", period: "ر.س / شهرياً", features: ["عملاء غير محدودين", "فواتير غير محدودة", "قوالب عقود جاهزة", "تخصيص الصفحة العامة", "تصدير PDF"], cta: "اشترك الآن", popular: true },
+{ name: "الأعمال", price: "99", period: "ر.س / شهرياً", features: ["كل مميزات المحترف", "فريق عمل (حتى 3 أعضاء)", "دومين مخصص", "ربط API", "دعم أولوي"], cta: "تواصل معنا", popular: false },
+```
+
+Also add a note under the pricing section: “تجربة مجانية 14 يوم — بدون بطاقة ائتمان”
+
+Also change the hero CTA button text from “ابدأ مجاناً” to “جرّب مجاناً 14 يوم”
+
+-----
+
+## 3. Prevent Deleting a Client That Has Related Data (HIGH PRIORITY - Data Integrity)
+
+In `server/storage.ts`, update the `deleteClient` method to check if the client has any related contracts, invoices, or projects before deleting. If related data exists, throw an error instead of deleting.
+
+```typescript
+async deleteClient(id: string, userId: string) {
+  // Check for related contracts
+  const [contractCount] = await db.select({ count: count() }).from(contracts)
+    .where(and(eq(contracts.clientId, id), eq(contracts.userId, userId)));
+  
+  // Check for related invoices
+  const [invoiceCount] = await db.select({ count: count() }).from(invoices)
+    .where(and(eq(invoices.clientId, id), eq(invoices.userId, userId)));
+  
+  // Check for related projects
+  const [projectCount] = await db.select({ count: count() }).from(projects)
+    .where(and(eq(projects.clientId, id), eq(projects.userId, userId)));
+
+  const total = contractCount.count + invoiceCount.count + projectCount.count;
+  if (total > 0) {
+    throw new Error(`CLIENT_HAS_RELATIONS:${contractCount.count}:${invoiceCount.count}:${projectCount.count}`);
+  }
+
+  await db.delete(clients).where(and(eq(clients.id, id), eq(clients.userId, userId)));
+  return true;
+}
+```
+
+In `server/routes.ts`, update the DELETE /api/clients/:id handler to catch this error and return a proper message:
+
+```typescript
+app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
+  try {
+    await storage.deleteClient(req.params.id, getUserId(req));
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error.message?.startsWith("CLIENT_HAS_RELATIONS")) {
+      const [, contracts, invoices, projects] = error.message.split(":");
+      return res.status(400).json({ 
+        message: `لا يمكن حذف العميل لأنه مرتبط بـ ${contracts} عقد و ${invoices} فاتورة و ${projects} مشروع. يرجى حذف أو نقل البيانات المرتبطة أولاً.`
+      });
+    }
+    res.status(500).json({ message: "فشل في حذف العميل" });
+  }
+});
+```
+
+On the frontend in `client/src/pages/clients.tsx`, update the delete mutation to show the error message from the server:
+
+```typescript
+const deleteMutation = useMutation({
+  mutationFn: async (id: string) => {
+    const res = await fetch(`/api/clients/${id}`, { method: "DELETE", credentials: "include" });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.message || "فشل في حذف العميل");
+    }
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    setDeleteConfirm(null);
+    toast({ title: "تم حذف العميل" });
+  },
+  onError: (error: Error) => {
+    setDeleteConfirm(null);
+    toast({ title: error.message, variant: "destructive" });
+  },
+});
+```
+
+-----
+
+## 4. Fix Search + Status Filter Not Working Together (MEDIUM PRIORITY)
+
+In `server/storage.ts`, the `getClients` method builds queries separately for search and status, so they override each other. Fix it to combine both conditions:
+
+```typescript
+async getClients(userId: string, search?: string, status?: string) {
+  const conditions = [eq(clients.userId, userId)];
+  
+  if (status && status !== "all") {
+    conditions.push(eq(clients.status, status));
+  }
+  
+  if (search) {
+    const searchPattern = `%${search}%`;
+    conditions.push(
+      or(
+        like(clients.name, searchPattern),
+        like(clients.email, searchPattern),
+        like(clients.company, searchPattern)
+      )!
+    );
+  }
+  
+  return db.select().from(clients)
+    .where(and(...conditions))
+    .orderBy(desc(clients.createdAt));
+}
+```
+
+-----
+
+## 5. Add Pagination to All List Endpoints (MEDIUM PRIORITY)
+
+Add pagination support to the following API endpoints:
+
+- GET /api/clients
+- GET /api/contracts
+- GET /api/invoices
+- GET /api/projects
+
+For each endpoint:
+
+1. Accept `page` (default: 1) and `limit` (default: 20) query parameters
+1. Return `{ data: [...], total: number, page: number, totalPages: number }`
+1. Use SQL LIMIT and OFFSET
+
+Example for clients route:
+
+```typescript
+app.get("/api/clients", isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const { search, status, page = "1", limit = "20" } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
+    const offset = (pageNum - 1) * limitNum;
+    
+    const { data, total } = await storage.getClients(getUserId(req), search as string, status as string, limitNum, offset);
+    res.json({
+      data,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+    });
+  } catch (error) {
+    res.status(500).json({ message: "فشل في تحميل العملاء" });
+  }
+});
+```
+
+Update the storage methods to accept limit and offset parameters and return both data and total count.
+
+On the frontend, update each list page (clients.tsx, contracts.tsx, invoices.tsx, projects.tsx) to:
+
+1. Track current page in state
+1. Show pagination controls (previous/next buttons + page number)
+1. Update the query to include page parameter
+
+-----
+
+## 6. Fix Settings Page - Remove Replit Reference (MEDIUM PRIORITY)
+
+In `client/src/pages/settings.tsx`:
+
+1. Remove the text “لتعديل معلومات حسابك، يرجى تعديلها من إعدادات حسابك في Replit.”
+1. Make the account fields (first name, last name, email) editable
+1. Add a save button that calls PATCH /api/auth/user to update the user data
+
+Update the account tab to:
+
+```tsx
+<TabsContent value="account">
+  <Card>
+    <CardHeader><CardTitle>معلومات الحساب</CardTitle></CardHeader>
+    <CardContent className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><Label>الاسم الأول</Label><Input value={accountForm.firstName} onChange={(e) => setAccountForm({ ...accountForm, firstName: e.target.value })} /></div>
+        <div><Label>اسم العائلة</Label><Input value={accountForm.lastName} onChange={(e) => setAccountForm({ ...accountForm, lastName: e.target.value })} /></div>
+        <div><Label>البريد الإلكتروني</Label><Input value={accountForm.email} onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })} /></div>
+      </div>
+      <Button onClick={() => saveAccount.mutate(accountForm)} disabled={saveAccount.isPending}>
+        {saveAccount.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حفظ
+      </Button>
+    </CardContent>
+  </Card>
+</TabsContent>
+```
+
+Also add a new API route `PATCH /api/auth/user` in `server/routes.ts` that updates the user’s firstName, lastName, and email in the users table.
+
+-----
+
+IMPORTANT: Do these fixes one at a time. After each fix, verify the app compiles and runs without errors before moving to the next one.
