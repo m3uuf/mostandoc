@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Pencil, Trash2, Loader2, Users } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import type { Client } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { active: "نشط", prospect: "محتمل", inactive: "غير نشط" };
@@ -24,18 +25,23 @@ export default function ClientsPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "", company: "", status: "active", notes: "" });
+  const [page, setPage] = useState(1);
 
-  const { data: clientsList = [], isLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients", { search, status: filterStatus }],
+  useEffect(() => { setPage(1); }, [search, filterStatus]);
+
+  const { data: result, isLoading } = useQuery<{ data: Client[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/clients", { search, status: filterStatus, page }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("page", String(page));
       const res = await fetch(`/api/clients?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
+  const { data: clientsList = [], total = 0, totalPages = 0, limit = 20 } = result || {};
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/clients", data),
@@ -61,6 +67,7 @@ export default function ClientsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setDeleteConfirm(null);
+      setPage(1);
       toast({ title: "تم حذف العميل" });
     },
   });
@@ -122,6 +129,7 @@ export default function ClientsPage() {
       ) : !clientsList.length ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">لا يوجد عملاء بعد. أضف أول عميل لك!</CardContent></Card>
       ) : (
+        <div className="space-y-0">
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -155,6 +163,8 @@ export default function ClientsPage() {
             </table>
           </div>
         </Card>
+        <PaginationControls page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} />
+      </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

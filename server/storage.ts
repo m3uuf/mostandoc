@@ -16,35 +16,48 @@ import {
   type Notification, type InsertNotification,
 } from "@shared/schema";
 
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
 export interface IStorage {
   getProfile(userId: string): Promise<Profile | undefined>;
   getProfileByUsername(username: string): Promise<Profile | undefined>;
   upsertProfile(data: InsertProfile): Promise<Profile>;
   updateProfile(userId: string, data: Partial<InsertProfile>): Promise<Profile | undefined>;
 
-  getClients(userId: string, search?: string, status?: string): Promise<Client[]>;
+  getClients(userId: string, pagination: PaginationParams, search?: string, status?: string): Promise<PaginatedResult<Client>>;
   getClient(id: string, userId: string): Promise<Client | undefined>;
   createClient(data: InsertClient): Promise<Client>;
   updateClient(id: string, userId: string, data: Partial<InsertClient>): Promise<Client | undefined>;
   deleteClient(id: string, userId: string): Promise<boolean>;
   getClientCount(userId: string): Promise<number>;
 
-  getContracts(userId: string, status?: string, search?: string): Promise<(Contract & { clientName?: string })[]>;
+  getContracts(userId: string, pagination: PaginationParams, status?: string, search?: string): Promise<PaginatedResult<Contract & { clientName?: string | null }>>;
   getContract(id: string, userId: string): Promise<Contract | undefined>;
   createContract(data: InsertContract): Promise<Contract>;
   updateContract(id: string, userId: string, data: Partial<InsertContract>): Promise<Contract | undefined>;
   deleteContract(id: string, userId: string): Promise<boolean>;
   getActiveContractCount(userId: string): Promise<number>;
-  getExpiringContracts(userId: string, days: number): Promise<(Contract & { clientName?: string })[]>;
+  getExpiringContracts(userId: string, days: number): Promise<(Contract & { clientName?: string | null })[]>;
 
-  getInvoices(userId: string, status?: string): Promise<(Invoice & { clientName?: string })[]>;
+  getInvoices(userId: string, pagination: PaginationParams, status?: string): Promise<PaginatedResult<Invoice & { clientName?: string | null }>>;
   getInvoice(id: string, userId: string): Promise<Invoice | undefined>;
   createInvoice(data: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, userId: string, data: Partial<InsertInvoice>): Promise<Invoice | undefined>;
   deleteInvoice(id: string, userId: string): Promise<boolean>;
   getNextInvoiceNumber(userId: string): Promise<string>;
   getPendingInvoiceStats(userId: string): Promise<{ count: number; total: string }>;
-  getOverdueInvoices(userId: string): Promise<(Invoice & { clientName?: string })[]>;
+  getOverdueInvoices(userId: string): Promise<(Invoice & { clientName?: string | null })[]>;
 
   getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]>;
   createInvoiceItem(data: InsertInvoiceItem): Promise<InvoiceItem>;
@@ -52,7 +65,7 @@ export interface IStorage {
   deleteInvoiceItem(id: string): Promise<boolean>;
   deleteInvoiceItemsByInvoiceId(invoiceId: string): Promise<boolean>;
 
-  getProjects(userId: string, status?: string): Promise<(Project & { clientName?: string })[]>;
+  getProjects(userId: string, pagination: PaginationParams, status?: string): Promise<PaginatedResult<Project & { clientName?: string | null }>>;
   getProject(id: string, userId: string): Promise<Project | undefined>;
   createProject(data: InsertProject): Promise<Project>;
   updateProject(id: string, userId: string, data: Partial<InsertProject>): Promise<Project | undefined>;
@@ -60,26 +73,31 @@ export interface IStorage {
   getActiveProjectCount(userId: string): Promise<number>;
 
   getProjectTasks(projectId: string): Promise<ProjectTask[]>;
+  getProjectTaskById(id: string): Promise<ProjectTask | undefined>;
   createProjectTask(data: InsertProjectTask): Promise<ProjectTask>;
   updateProjectTask(id: string, data: Partial<InsertProjectTask>): Promise<ProjectTask | undefined>;
   deleteProjectTask(id: string): Promise<boolean>;
 
   getServices(profileId: string): Promise<Service[]>;
+  getServiceById(id: string): Promise<Service | undefined>;
   createService(data: InsertService): Promise<Service>;
   updateService(id: string, data: Partial<InsertService>): Promise<Service | undefined>;
   deleteService(id: string): Promise<boolean>;
 
   getPortfolioItems(profileId: string): Promise<PortfolioItem[]>;
+  getPortfolioItemById(id: string): Promise<PortfolioItem | undefined>;
   createPortfolioItem(data: InsertPortfolioItem): Promise<PortfolioItem>;
   updatePortfolioItem(id: string, data: Partial<InsertPortfolioItem>): Promise<PortfolioItem | undefined>;
   deletePortfolioItem(id: string): Promise<boolean>;
 
-  getContactMessages(profileId: string): Promise<ContactMessage[]>;
+  getContactMessages(profileId: string, pagination: PaginationParams): Promise<PaginatedResult<ContactMessage>>;
+  getContactMessageById(id: string): Promise<ContactMessage | undefined>;
   createContactMessage(data: InsertContactMessage): Promise<ContactMessage>;
   markMessageAsRead(id: string): Promise<boolean>;
   getUnreadMessageCount(profileId: string): Promise<number>;
 
-  getNotifications(userId: string): Promise<Notification[]>;
+  getNotifications(userId: string, pagination: PaginationParams): Promise<PaginatedResult<Notification>>;
+  getNotificationById(id: string): Promise<Notification | undefined>;
   createNotification(data: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<boolean>;
   markAllNotificationsAsRead(userId: string): Promise<boolean>;
@@ -118,19 +136,21 @@ export class DatabaseStorage implements IStorage {
     return profile;
   }
 
-  async getClients(userId: string, search?: string, status?: string) {
-    let query = db.select().from(clients).where(eq(clients.userId, userId));
+  async getClients(userId: string, pagination: PaginationParams, search?: string, status?: string) {
+    const conditions: any[] = [eq(clients.userId, userId)];
     if (status && status !== "all") {
-      query = db.select().from(clients).where(and(eq(clients.userId, userId), eq(clients.status, status)));
+      conditions.push(eq(clients.status, status));
     }
     if (search) {
       const searchPattern = `%${search}%`;
-      query = db.select().from(clients).where(and(
-        eq(clients.userId, userId),
-        or(like(clients.name, searchPattern), like(clients.email, searchPattern), like(clients.company, searchPattern))
-      ));
+      conditions.push(or(like(clients.name, searchPattern), like(clients.email, searchPattern), like(clients.company, searchPattern)));
     }
-    return query.orderBy(desc(clients.createdAt));
+    const whereClause = and(...conditions);
+    const [totalResult] = await db.select({ count: count() }).from(clients).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+    const data = await db.select().from(clients).where(whereClause).orderBy(desc(clients.createdAt)).limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async getClient(id: string, userId: string) {
@@ -159,11 +179,16 @@ export class DatabaseStorage implements IStorage {
     return result.count;
   }
 
-  async getContracts(userId: string, status?: string, search?: string) {
-    const conditions = [eq(contracts.userId, userId)];
+  async getContracts(userId: string, pagination: PaginationParams, status?: string, search?: string) {
+    const conditions: any[] = [eq(contracts.userId, userId)];
     if (status && status !== "all") conditions.push(eq(contracts.status, status));
+    const whereClause = and(...conditions);
 
-    const result = await db.select({
+    const [totalResult] = await db.select({ count: count() }).from(contracts).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+
+    const data = await db.select({
       id: contracts.id, userId: contracts.userId, clientId: contracts.clientId,
       title: contracts.title, description: contracts.description, content: contracts.content,
       value: contracts.value, currency: contracts.currency, status: contracts.status,
@@ -172,9 +197,10 @@ export class DatabaseStorage implements IStorage {
       clientName: clients.name,
     }).from(contracts)
       .leftJoin(clients, eq(contracts.clientId, clients.id))
-      .where(and(...conditions))
-      .orderBy(desc(contracts.createdAt));
-    return result;
+      .where(whereClause)
+      .orderBy(desc(contracts.createdAt))
+      .limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async getContract(id: string, userId: string) {
@@ -226,11 +252,16 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getInvoices(userId: string, status?: string) {
-    const conditions = [eq(invoices.userId, userId)];
+  async getInvoices(userId: string, pagination: PaginationParams, status?: string) {
+    const conditions: any[] = [eq(invoices.userId, userId)];
     if (status && status !== "all") conditions.push(eq(invoices.status, status));
+    const whereClause = and(...conditions);
 
-    return db.select({
+    const [totalResult] = await db.select({ count: count() }).from(invoices).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+
+    const data = await db.select({
       id: invoices.id, userId: invoices.userId, clientId: invoices.clientId,
       invoiceNumber: invoices.invoiceNumber, status: invoices.status,
       issueDate: invoices.issueDate, dueDate: invoices.dueDate,
@@ -241,8 +272,10 @@ export class DatabaseStorage implements IStorage {
       clientName: clients.name,
     }).from(invoices)
       .leftJoin(clients, eq(invoices.clientId, clients.id))
-      .where(and(...conditions))
-      .orderBy(desc(invoices.createdAt));
+      .where(whereClause)
+      .orderBy(desc(invoices.createdAt))
+      .limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async getInvoice(id: string, userId: string) {
@@ -328,11 +361,16 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async getProjects(userId: string, status?: string) {
-    const conditions = [eq(projects.userId, userId)];
+  async getProjects(userId: string, pagination: PaginationParams, status?: string) {
+    const conditions: any[] = [eq(projects.userId, userId)];
     if (status && status !== "all") conditions.push(eq(projects.status, status));
+    const whereClause = and(...conditions);
 
-    return db.select({
+    const [totalResult] = await db.select({ count: count() }).from(projects).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+
+    const data = await db.select({
       id: projects.id, userId: projects.userId, clientId: projects.clientId,
       contractId: projects.contractId, name: projects.name,
       description: projects.description, status: projects.status,
@@ -342,8 +380,10 @@ export class DatabaseStorage implements IStorage {
       clientName: clients.name,
     }).from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .where(and(...conditions))
-      .orderBy(desc(projects.createdAt));
+      .where(whereClause)
+      .orderBy(desc(projects.createdAt))
+      .limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async getProject(id: string, userId: string) {
@@ -381,6 +421,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(projectTasks).where(eq(projectTasks.projectId, projectId)).orderBy(projectTasks.sortOrder);
   }
 
+  async getProjectTaskById(id: string) {
+    const [task] = await db.select().from(projectTasks).where(eq(projectTasks.id, id));
+    return task;
+  }
+
   async createProjectTask(data: InsertProjectTask) {
     const [task] = await db.insert(projectTasks).values(data).returning();
     return task;
@@ -399,6 +444,11 @@ export class DatabaseStorage implements IStorage {
 
   async getServices(profileId: string) {
     return db.select().from(services).where(eq(services.profileId, profileId)).orderBy(services.sortOrder);
+  }
+
+  async getServiceById(id: string) {
+    const [service] = await db.select().from(services).where(eq(services.id, id));
+    return service;
   }
 
   async createService(data: InsertService) {
@@ -420,6 +470,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(portfolioItems).where(eq(portfolioItems.profileId, profileId)).orderBy(portfolioItems.sortOrder);
   }
 
+  async getPortfolioItemById(id: string) {
+    const [item] = await db.select().from(portfolioItems).where(eq(portfolioItems.id, id));
+    return item;
+  }
+
   async createPortfolioItem(data: InsertPortfolioItem) {
     const [item] = await db.insert(portfolioItems).values(data).returning();
     return item;
@@ -435,8 +490,18 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
-  async getContactMessages(profileId: string) {
-    return db.select().from(contactMessages).where(eq(contactMessages.profileId, profileId)).orderBy(desc(contactMessages.createdAt));
+  async getContactMessageById(id: string) {
+    const [msg] = await db.select().from(contactMessages).where(eq(contactMessages.id, id));
+    return msg;
+  }
+
+  async getContactMessages(profileId: string, pagination: PaginationParams) {
+    const whereClause = eq(contactMessages.profileId, profileId);
+    const [totalResult] = await db.select({ count: count() }).from(contactMessages).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+    const data = await db.select().from(contactMessages).where(whereClause).orderBy(desc(contactMessages.createdAt)).limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async createContactMessage(data: InsertContactMessage) {
@@ -455,8 +520,18 @@ export class DatabaseStorage implements IStorage {
     return result.count;
   }
 
-  async getNotifications(userId: string) {
-    return db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt)).limit(50);
+  async getNotificationById(id: string) {
+    const [notification] = await db.select().from(notifications).where(eq(notifications.id, id));
+    return notification;
+  }
+
+  async getNotifications(userId: string, pagination: PaginationParams) {
+    const whereClause = eq(notifications.userId, userId);
+    const [totalResult] = await db.select({ count: count() }).from(notifications).where(whereClause);
+    const total = totalResult.count;
+    const offset = (pagination.page - 1) * pagination.limit;
+    const data = await db.select().from(notifications).where(whereClause).orderBy(desc(notifications.createdAt)).limit(pagination.limit).offset(offset);
+    return { data, total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit) };
   }
 
   async createNotification(data: InsertNotification) {

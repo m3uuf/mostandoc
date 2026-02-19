@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { Globe, Plus, Pencil, Trash2, Loader2, ExternalLink, Mail, Eye, Upload, Lock, Image, X, Palette, ImageIcon } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import type { Profile, Service, PortfolioItem, ContactMessage } from "@shared/schema";
 
 export default function MyPageManager() {
@@ -22,7 +23,18 @@ export default function MyPageManager() {
   const { data: profile, isLoading: profileLoading } = useQuery<Profile | null>({ queryKey: ["/api/profile"] });
   const { data: servicesList = [] } = useQuery<Service[]>({ queryKey: ["/api/services"] });
   const { data: portfolio = [] } = useQuery<PortfolioItem[]>({ queryKey: ["/api/portfolio"] });
-  const { data: messages = [] } = useQuery<ContactMessage[]>({ queryKey: ["/api/messages"] });
+  const [messagesPage, setMessagesPage] = useState(1);
+  const { data: messagesResult } = useQuery<{ data: ContactMessage[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/messages", { page: messagesPage }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", String(messagesPage));
+      const res = await fetch(`/api/messages?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+  const { data: messages = [], total: messagesTotal = 0, totalPages: messagesTotalPages = 0, limit: messagesLimit = 20 } = messagesResult || {};
 
   const profileExists = !!profile;
 
@@ -69,7 +81,7 @@ export default function MyPageManager() {
         <TabsContent value="profile"><ProfileTab profile={profile} isLoading={profileLoading} /></TabsContent>
         <TabsContent value="services"><ServicesTab services={servicesList} /></TabsContent>
         <TabsContent value="portfolio"><PortfolioTab items={portfolio} /></TabsContent>
-        <TabsContent value="messages"><MessagesTab messages={messages} /></TabsContent>
+        <TabsContent value="messages"><MessagesTab messages={messages} page={messagesPage} totalPages={messagesTotalPages} total={messagesTotal} limit={messagesLimit} onPageChange={setMessagesPage} /></TabsContent>
       </Tabs>
     </div>
   );
@@ -591,7 +603,7 @@ function PortfolioTab({ items }: { items: PortfolioItem[] }) {
   );
 }
 
-function MessagesTab({ messages }: { messages: ContactMessage[] }) {
+function MessagesTab({ messages, page, totalPages, total, limit, onPageChange }: { messages: ContactMessage[]; page: number; totalPages: number; total: number; limit: number; onPageChange: (page: number) => void }) {
   const markReadMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/messages/${id}/read`),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/messages"] }); },
@@ -624,6 +636,7 @@ function MessagesTab({ messages }: { messages: ContactMessage[] }) {
           </CardContent>
         </Card>
       ))}
+      <PaginationControls page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={onPageChange} />
     </div>
   );
 }

@@ -9,6 +9,12 @@ function getUserId(req: Request): string {
   return (req.user as any)?.claims?.sub;
 }
 
+function getPagination(req: Request, defaultLimit = 20) {
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || defaultLimit));
+  return { page, limit };
+}
+
 function cleanDates(obj: Record<string, any>, dateFields: string[]): Record<string, any> {
   const cleaned = { ...obj };
   for (const field of dateFields) {
@@ -88,8 +94,9 @@ export async function registerRoutes(
   app.get("/api/clients", isAuthenticated, async (req, res) => {
     try {
       const { search, status } = req.query;
-      const clientsList = await storage.getClients(getUserId(req), search as string, status as string);
-      res.json(clientsList);
+      const pagination = getPagination(req);
+      const result = await storage.getClients(getUserId(req), pagination, search as string, status as string);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل العملاء" });
     }
@@ -136,8 +143,9 @@ export async function registerRoutes(
   app.get("/api/contracts", isAuthenticated, async (req, res) => {
     try {
       const { status, search } = req.query;
-      const contractsList = await storage.getContracts(getUserId(req), status as string, search as string);
-      res.json(contractsList);
+      const pagination = getPagination(req);
+      const result = await storage.getContracts(getUserId(req), pagination, status as string, search as string);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل العقود" });
     }
@@ -187,8 +195,9 @@ export async function registerRoutes(
   app.get("/api/invoices", isAuthenticated, async (req, res) => {
     try {
       const { status } = req.query;
-      const invoicesList = await storage.getInvoices(getUserId(req), status as string);
-      res.json(invoicesList);
+      const pagination = getPagination(req);
+      const result = await storage.getInvoices(getUserId(req), pagination, status as string);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل الفواتير" });
     }
@@ -263,8 +272,9 @@ export async function registerRoutes(
   app.get("/api/projects", isAuthenticated, async (req, res) => {
     try {
       const { status } = req.query;
-      const projectsList = await storage.getProjects(getUserId(req), status as string);
-      res.json(projectsList);
+      const pagination = getPagination(req);
+      const result = await storage.getProjects(getUserId(req), pagination, status as string);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل المشاريع" });
     }
@@ -321,6 +331,8 @@ export async function registerRoutes(
 
   app.post("/api/projects/:id/tasks", isAuthenticated, async (req, res) => {
     try {
+      const project = await storage.getProject(req.params.id, getUserId(req));
+      if (!project) return res.status(403).json({ message: "غير مصرح" });
       const task = await storage.createProjectTask({ ...req.body, projectId: req.params.id });
       res.json(task);
     } catch (error) {
@@ -330,6 +342,10 @@ export async function registerRoutes(
 
   app.patch("/api/tasks/:id", isAuthenticated, async (req, res) => {
     try {
+      const existingTask = await storage.getProjectTaskById(req.params.id);
+      if (!existingTask) return res.status(404).json({ message: "المهمة غير موجودة" });
+      const project = await storage.getProject(existingTask.projectId, getUserId(req));
+      if (!project) return res.status(403).json({ message: "غير مصرح" });
       const task = await storage.updateProjectTask(req.params.id, req.body);
       if (!task) return res.status(404).json({ message: "المهمة غير موجودة" });
       res.json(task);
@@ -340,6 +356,10 @@ export async function registerRoutes(
 
   app.delete("/api/tasks/:id", isAuthenticated, async (req, res) => {
     try {
+      const existingTask = await storage.getProjectTaskById(req.params.id);
+      if (!existingTask) return res.status(404).json({ message: "المهمة غير موجودة" });
+      const project = await storage.getProject(existingTask.projectId, getUserId(req));
+      if (!project) return res.status(403).json({ message: "غير مصرح" });
       await storage.deleteProjectTask(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -374,6 +394,10 @@ export async function registerRoutes(
 
   app.patch("/api/services/:id", isAuthenticated, async (req, res) => {
     try {
+      const profile = await storage.getProfile(getUserId(req));
+      if (!profile) return res.status(403).json({ message: "غير مصرح" });
+      const existing = await storage.getServiceById(req.params.id);
+      if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
       const service = await storage.updateService(req.params.id, req.body);
       res.json(service);
     } catch (error) {
@@ -383,6 +407,10 @@ export async function registerRoutes(
 
   app.delete("/api/services/:id", isAuthenticated, async (req, res) => {
     try {
+      const profile = await storage.getProfile(getUserId(req));
+      if (!profile) return res.status(403).json({ message: "غير مصرح" });
+      const existing = await storage.getServiceById(req.params.id);
+      if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
       await storage.deleteService(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -414,6 +442,10 @@ export async function registerRoutes(
 
   app.patch("/api/portfolio/:id", isAuthenticated, async (req, res) => {
     try {
+      const profile = await storage.getProfile(getUserId(req));
+      if (!profile) return res.status(403).json({ message: "غير مصرح" });
+      const existing = await storage.getPortfolioItemById(req.params.id);
+      if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
       const item = await storage.updatePortfolioItem(req.params.id, req.body);
       res.json(item);
     } catch (error) {
@@ -423,6 +455,10 @@ export async function registerRoutes(
 
   app.delete("/api/portfolio/:id", isAuthenticated, async (req, res) => {
     try {
+      const profile = await storage.getProfile(getUserId(req));
+      if (!profile) return res.status(403).json({ message: "غير مصرح" });
+      const existing = await storage.getPortfolioItemById(req.params.id);
+      if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
       await storage.deletePortfolioItem(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -433,9 +469,10 @@ export async function registerRoutes(
   app.get("/api/messages", isAuthenticated, async (req, res) => {
     try {
       const profile = await storage.getProfile(getUserId(req));
-      if (!profile) return res.json([]);
-      const messages = await storage.getContactMessages(profile.id);
-      res.json(messages);
+      if (!profile) return res.json({ data: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+      const pagination = getPagination(req);
+      const result = await storage.getContactMessages(profile.id, pagination);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل الرسائل" });
     }
@@ -443,6 +480,10 @@ export async function registerRoutes(
 
   app.patch("/api/messages/:id/read", isAuthenticated, async (req, res) => {
     try {
+      const profile = await storage.getProfile(getUserId(req));
+      if (!profile) return res.status(403).json({ message: "غير مصرح" });
+      const msg = await storage.getContactMessageById(req.params.id);
+      if (!msg || msg.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
       await storage.markMessageAsRead(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -452,8 +493,9 @@ export async function registerRoutes(
 
   app.get("/api/notifications", isAuthenticated, async (req, res) => {
     try {
-      const notifs = await storage.getNotifications(getUserId(req));
-      res.json(notifs);
+      const pagination = getPagination(req, 30);
+      const result = await storage.getNotifications(getUserId(req), pagination);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل الإشعارات" });
     }
@@ -470,6 +512,8 @@ export async function registerRoutes(
 
   app.patch("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
     try {
+      const notification = await storage.getNotificationById(req.params.id);
+      if (!notification || notification.userId !== getUserId(req)) return res.status(403).json({ message: "غير مصرح" });
       await storage.markNotificationAsRead(req.params.id);
       res.json({ success: true });
     } catch (error) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, FolderKanban, Pencil, Trash2, GripVertical } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import type { Project, ProjectTask, Client } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { not_started: "لم يبدأ", in_progress: "قيد التنفيذ", on_hold: "متوقف", completed: "مكتمل", cancelled: "ملغي" };
@@ -29,17 +30,22 @@ export default function ProjectsPage() {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: "", description: "", priority: "medium", dueDate: "", status: "todo" });
   const [form, setForm] = useState({ name: "", clientId: "", description: "", status: "not_started", priority: "medium", startDate: "", deadline: "", budget: "" });
+  const [page, setPage] = useState(1);
 
-  const { data: projectsList = [], isLoading } = useQuery<(Project & { clientName?: string })[]>({
-    queryKey: ["/api/projects", { status: filterStatus }],
+  useEffect(() => { setPage(1); }, [filterStatus]);
+
+  const { data: result, isLoading } = useQuery<{ data: (Project & { clientName?: string })[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/projects", { status: filterStatus, page }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("page", String(page));
       const res = await fetch(`/api/projects?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
+  const { data: projectsList = [], total = 0, totalPages = 0, limit = 20 } = result || {};
 
   const { data: projectDetail } = useQuery<Project & { tasks: ProjectTask[] }>({
     queryKey: ["/api/projects", detailOpen],
@@ -151,6 +157,7 @@ export default function ProjectsPage() {
       ) : !projectsList.length ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">لا توجد مشاريع. أنشئ مشروعك الأول!</CardContent></Card>
       ) : (
+        <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projectsList.map((project) => (
             <Card key={project.id} className="hover-elevate cursor-pointer" onClick={() => setDetailOpen(project.id)} data-testid={`card-project-${project.id}`}>
@@ -173,6 +180,8 @@ export default function ProjectsPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+        <PaginationControls page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} />
         </div>
       )}
 

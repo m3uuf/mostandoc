@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, Receipt, Pencil, Trash2, X, Download } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
 import type { Invoice, Client, Profile } from "@shared/schema";
 
@@ -27,17 +28,22 @@ export default function InvoicesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({ clientId: "", invoiceNumber: "", issueDate: new Date().toISOString().split("T")[0], dueDate: "", vatRate: "15.00", notes: "", paymentMethod: "", status: "draft" });
   const [items, setItems] = useState<InvoiceFormItem[]>([{ description: "", quantity: "1", unitPrice: "", total: "0" }]);
+  const [page, setPage] = useState(1);
 
-  const { data: invoicesList = [], isLoading } = useQuery<(Invoice & { clientName?: string })[]>({
-    queryKey: ["/api/invoices", { status: filterStatus }],
+  useEffect(() => { setPage(1); }, [filterStatus]);
+
+  const { data: result, isLoading } = useQuery<{ data: (Invoice & { clientName?: string })[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/invoices", { status: filterStatus, page }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("page", String(page));
       const res = await fetch(`/api/invoices?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
+  const { data: invoicesList = [], total: paginationTotal = 0, totalPages = 0, limit: paginationLimit = 20 } = result || {};
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: profile } = useQuery<Profile>({ queryKey: ["/api/profile"] });
@@ -180,6 +186,7 @@ export default function InvoicesPage() {
       ) : !invoicesList.length ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">لا توجد فواتير. أنشئ أول فاتورة!</CardContent></Card>
       ) : (
+        <div className="space-y-0">
         <Card>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -216,6 +223,8 @@ export default function InvoicesPage() {
             </table>
           </div>
         </Card>
+        <PaginationControls page={page} totalPages={totalPages} total={paginationTotal} limit={paginationLimit} onPageChange={setPage} />
+        </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

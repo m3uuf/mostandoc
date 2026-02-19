@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -5,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Bell, CheckCheck, Loader2, FileText, Receipt, Mail, FolderKanban } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import type { Notification } from "@shared/schema";
 
 const iconMap: Record<string, any> = {
@@ -17,7 +19,18 @@ const iconMap: Record<string, any> = {
 
 export default function NotificationsPage() {
   const { toast } = useToast();
-  const { data: notifications = [], isLoading } = useQuery<Notification[]>({ queryKey: ["/api/notifications"] });
+  const [page, setPage] = useState(1);
+  const { data: result, isLoading } = useQuery<{ data: Notification[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/notifications", { page }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      const res = await fetch(`/api/notifications?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+  const { data: notifications = [], total = 0, totalPages = 0, limit = 20 } = result || {};
 
   const markAllRead = useMutation({
     mutationFn: () => apiRequest("POST", "/api/notifications/read-all"),
@@ -63,6 +76,7 @@ export default function NotificationsPage() {
         <Card><CardContent className="py-12 text-center text-muted-foreground">لا توجد إشعارات</CardContent></Card>
       ) : (
         <div className="space-y-2">
+        <div className="space-y-2">
           {notifications.map((notif) => {
             const Icon = iconMap[notif.type] || Bell;
             return (
@@ -86,6 +100,8 @@ export default function NotificationsPage() {
               </Card>
             );
           })}
+        </div>
+        <PaginationControls page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} />
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Loader2, FileText, Pencil, Trash2, Download } from "lucide-react";
+import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
 import type { Contract, Client, Profile } from "@shared/schema";
 
@@ -30,17 +31,22 @@ export default function ContractsPage() {
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", clientId: "", description: "", content: "", value: "", currency: "SAR", status: "draft", startDate: "", endDate: "" });
+  const [page, setPage] = useState(1);
 
-  const { data: contractsList = [], isLoading } = useQuery<(Contract & { clientName?: string })[]>({
-    queryKey: ["/api/contracts", { status: filterStatus }],
+  useEffect(() => { setPage(1); }, [filterStatus]);
+
+  const { data: result, isLoading } = useQuery<{ data: (Contract & { clientName?: string })[]; total: number; page: number; limit: number; totalPages: number }>({
+    queryKey: ["/api/contracts", { status: filterStatus, page }],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("page", String(page));
       const res = await fetch(`/api/contracts?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
+  const { data: contractsList = [], total = 0, totalPages = 0, limit = 20 } = result || {};
 
   const { data: clients = [] } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: profile } = useQuery<Profile>({ queryKey: ["/api/profile"] });
@@ -146,6 +152,7 @@ export default function ContractsPage() {
       ) : !contractsList.length ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">لا توجد عقود. أنشئ أول عقد لك!</CardContent></Card>
       ) : (
+        <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {contractsList.map((contract) => (
             <Card key={contract.id} className="hover-elevate" data-testid={`card-contract-${contract.id}`}>
@@ -171,6 +178,8 @@ export default function ContractsPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+        <PaginationControls page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={setPage} />
         </div>
       )}
 
