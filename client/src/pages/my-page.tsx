@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
-import { Globe, Plus, Pencil, Trash2, Loader2, ExternalLink, Mail, Eye, Upload, Lock, Image, X } from "lucide-react";
+import { Globe, Plus, Pencil, Trash2, Loader2, ExternalLink, Mail, Eye, Upload, Lock, Image, X, Palette, ImageIcon } from "lucide-react";
 import type { Profile, Service, PortfolioItem, ContactMessage } from "@shared/schema";
 
 export default function MyPageManager() {
@@ -133,6 +133,110 @@ function FileUploadButton({ onUploaded, currentUrl, label, acceptTypes = "image/
   );
 }
 
+const PRESET_COLORS = [
+  { label: "أزرق داكن", value: "#1B4F72" },
+  { label: "أزرق فاتح", value: "#2E86C1" },
+  { label: "أخضر", value: "#27AE60" },
+  { label: "برتقالي", value: "#E8752A" },
+  { label: "بنفسجي", value: "#8E44AD" },
+  { label: "أحمر", value: "#C0392B" },
+  { label: "فيروزي", value: "#1ABC9C" },
+  { label: "رمادي", value: "#2C3E50" },
+  { label: "ذهبي", value: "#D4A017" },
+  { label: "وردي", value: "#E91E63" },
+];
+
+function ColorPicker({ label, value, onChange, testId }: { label: string; value: string; onChange: (v: string) => void; testId: string }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex items-center gap-2 flex-wrap">
+        {PRESET_COLORS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            onClick={() => onChange(c.value)}
+            className={`w-8 h-8 rounded-md border-2 transition-all ${value === c.value ? "border-foreground scale-110" : "border-transparent"}`}
+            style={{ backgroundColor: c.value }}
+            title={c.label}
+            data-testid={`color-${c.value.replace("#", "")}`}
+          />
+        ))}
+        <div className="flex items-center gap-1">
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-8 h-8 rounded-md cursor-pointer border-0 p-0"
+            data-testid={testId}
+          />
+          <Input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-24 text-xs font-mono"
+            maxLength={7}
+            dir="ltr"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroPreview({ form }: { form: any }) {
+  const headerStyle = form.headerStyle || "gradient";
+  const primaryColor = form.primaryColor || "#1B4F72";
+  const accentColor = form.accentColor || "#2E86C1";
+
+  const heroStyle: React.CSSProperties = {};
+  if (headerStyle === "gradient") {
+    heroStyle.background = `linear-gradient(to bottom left, ${primaryColor}, ${accentColor}50, ${primaryColor}dd)`;
+  } else if (headerStyle === "solid") {
+    heroStyle.backgroundColor = primaryColor;
+  } else if (headerStyle === "image" && form.coverImageUrl) {
+    heroStyle.backgroundImage = `url(${form.coverImageUrl})`;
+    heroStyle.backgroundSize = "cover";
+    heroStyle.backgroundPosition = "center";
+  } else if (headerStyle === "minimal") {
+    heroStyle.background = "transparent";
+  }
+
+  const isDark = headerStyle !== "minimal";
+  const textClass = isDark ? "text-white" : "text-foreground";
+
+  return (
+    <div className="rounded-md overflow-hidden border" data-testid="hero-preview">
+      <div className="relative" style={{ ...heroStyle, minHeight: 120 }}>
+        {headerStyle === "image" && form.coverImageUrl && (
+          <div className="absolute inset-0 bg-black/50" />
+        )}
+        <div className={`relative p-4 text-center ${textClass}`}>
+          <div className="flex items-center justify-center gap-3 mb-2">
+            {form.logoUrl && (
+              <img src={form.logoUrl} alt="logo" className="h-8 w-8 rounded-md object-cover" />
+            )}
+            {form.avatarUrl && (
+              <div className="w-12 h-12 rounded-full border-2 border-white/30 overflow-hidden">
+                <img src={form.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+              </div>
+            )}
+          </div>
+          <p className="font-bold text-sm">{form.fullName || "اسمك هنا"}</p>
+          <p className="text-xs opacity-80">{form.bio ? form.bio.substring(0, 50) + "..." : "نبذة مختصرة عنك"}</p>
+          <div className="mt-2">
+            <span
+              className="inline-block px-3 py-1 rounded-md text-xs font-medium text-white"
+              style={{ backgroundColor: form.buttonStyle === "outlined" ? "transparent" : accentColor, border: form.buttonStyle === "outlined" ? `1px solid ${accentColor}` : "none", color: form.buttonStyle === "outlined" ? accentColor : "white" }}
+            >
+              تواصل معي
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefined; isLoading: boolean }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -141,6 +245,14 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
     emailPublic: profile?.emailPublic || "", phonePublic: profile?.phonePublic || "",
     website: profile?.website || "", isPublic: profile?.isPublic ?? true,
     socialLinks: profile?.socialLinks || {},
+    primaryColor: profile?.primaryColor || "#1B4F72",
+    accentColor: profile?.accentColor || "#2E86C1",
+    headerStyle: profile?.headerStyle || "gradient",
+    coverImageUrl: profile?.coverImageUrl || "",
+    themeMode: profile?.themeMode || "light",
+    buttonStyle: profile?.buttonStyle || "filled",
+    logoUrl: profile?.logoUrl || "",
+    avatarUrl: profile?.avatarUrl || "",
   });
 
   const update = (key: string, value: any) => setForm((p) => ({ ...p, [key]: value }));
@@ -153,6 +265,14 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
         emailPublic: profile.emailPublic || "", phonePublic: profile.phonePublic || "",
         website: profile.website || "", isPublic: profile.isPublic ?? true,
         socialLinks: profile.socialLinks || {},
+        primaryColor: profile.primaryColor || "#1B4F72",
+        accentColor: profile.accentColor || "#2E86C1",
+        headerStyle: profile.headerStyle || "gradient",
+        coverImageUrl: profile.coverImageUrl || "",
+        themeMode: profile.themeMode || "light",
+        buttonStyle: profile.buttonStyle || "filled",
+        logoUrl: profile.logoUrl || "",
+        avatarUrl: profile.avatarUrl || "",
       });
     }
   }, [profile]);
@@ -174,42 +294,127 @@ function ProfileTab({ profile, isLoading }: { profile: Profile | null | undefine
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
-    <Card>
-      <CardContent className="p-4 space-y-4">
-        {!profile && (
-          <div className="bg-accent/10 border border-accent/30 rounded-md p-3 text-sm text-accent-foreground" data-testid="text-profile-required-notice">
-            أنشئ بروفايلك أولاً لتتمكن من إضافة الخدمات ومعرض الأعمال
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">المعلومات الأساسية</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!profile && (
+            <div className="bg-accent/10 border border-accent/30 rounded-md p-3 text-sm text-accent-foreground" data-testid="text-profile-required-notice">
+              أنشئ بروفايلك أولاً لتتمكن من إضافة الخدمات ومعرض الأعمال
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>اسم المستخدم (رابط صفحتك) *</Label><Input value={form.username} onChange={(e) => update("username", e.target.value)} data-testid="input-username" /><p className="text-xs text-muted-foreground mt-1">{window.location.origin}/p/{form.username}</p></div>
+            <div><Label>الاسم الكامل</Label><Input value={form.fullName} onChange={(e) => update("fullName", e.target.value)} data-testid="input-fullname" /></div>
+            <div><Label>المهنة</Label>
+              <Select value={form.profession} onValueChange={(v) => update("profession", v)}>
+                <SelectTrigger><SelectValue placeholder="اختر المجال" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="design">تصميم</SelectItem><SelectItem value="development">برمجة</SelectItem>
+                  <SelectItem value="marketing">تسويق</SelectItem><SelectItem value="consulting">استشارات</SelectItem>
+                  <SelectItem value="photography">تصوير</SelectItem><SelectItem value="writing">كتابة</SelectItem>
+                  <SelectItem value="other">أخرى</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>الموقع</Label><Input value={form.location} onChange={(e) => update("location", e.target.value)} /></div>
+            <div><Label>الإيميل (يظهر في صفحتك)</Label><Input value={form.emailPublic} onChange={(e) => update("emailPublic", e.target.value)} /></div>
+            <div><Label>الجوال (يظهر في صفحتك)</Label><Input value={form.phonePublic} onChange={(e) => update("phonePublic", e.target.value)} /></div>
+            <div><Label>الموقع الإلكتروني</Label><Input value={form.website} onChange={(e) => update("website", e.target.value)} /></div>
           </div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div><Label>اسم المستخدم (رابط صفحتك) *</Label><Input value={form.username} onChange={(e) => update("username", e.target.value)} data-testid="input-username" /><p className="text-xs text-muted-foreground mt-1">{window.location.origin}/p/{form.username}</p></div>
-          <div><Label>الاسم الكامل</Label><Input value={form.fullName} onChange={(e) => update("fullName", e.target.value)} data-testid="input-fullname" /></div>
-          <div><Label>المهنة</Label>
-            <Select value={form.profession} onValueChange={(v) => update("profession", v)}>
-              <SelectTrigger><SelectValue placeholder="اختر المجال" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="design">تصميم</SelectItem><SelectItem value="development">برمجة</SelectItem>
-                <SelectItem value="marketing">تسويق</SelectItem><SelectItem value="consulting">استشارات</SelectItem>
-                <SelectItem value="photography">تصوير</SelectItem><SelectItem value="writing">كتابة</SelectItem>
-                <SelectItem value="other">أخرى</SelectItem>
-              </SelectContent>
-            </Select>
+          <div><Label>النبذة</Label><Textarea value={form.bio} onChange={(e) => update("bio", e.target.value)} data-testid="input-bio" /></div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" checked={form.isPublic} onChange={(e) => update("isPublic", e.target.checked)} id="isPublic" className="h-4 w-4" />
+            <Label htmlFor="isPublic">تفعيل الصفحة العامة</Label>
           </div>
-          <div><Label>الموقع</Label><Input value={form.location} onChange={(e) => update("location", e.target.value)} /></div>
-          <div><Label>الإيميل (يظهر في صفحتك)</Label><Input value={form.emailPublic} onChange={(e) => update("emailPublic", e.target.value)} /></div>
-          <div><Label>الجوال (يظهر في صفحتك)</Label><Input value={form.phonePublic} onChange={(e) => update("phonePublic", e.target.value)} /></div>
-          <div><Label>الموقع الإلكتروني</Label><Input value={form.website} onChange={(e) => update("website", e.target.value)} /></div>
-        </div>
-        <div><Label>النبذة</Label><Textarea value={form.bio} onChange={(e) => update("bio", e.target.value)} data-testid="input-bio" /></div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" checked={form.isPublic} onChange={(e) => update("isPublic", e.target.checked)} id="isPublic" className="h-4 w-4" />
-          <Label htmlFor="isPublic">تفعيل الصفحة العامة</Label>
-        </div>
-        <Button onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-profile">
-          {saveMutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حفظ البروفايل
-        </Button>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2"><Palette className="h-5 w-5" /> الهوية البصرية</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FileUploadButton
+                  label="الصورة الشخصية"
+                  currentUrl={form.avatarUrl || undefined}
+                  onUploaded={(path) => update("avatarUrl", path)}
+                  acceptTypes="image/*"
+                />
+                <FileUploadButton
+                  label="الشعار (Logo)"
+                  currentUrl={form.logoUrl || undefined}
+                  onUploaded={(path) => update("logoUrl", path)}
+                  acceptTypes="image/*"
+                />
+              </div>
+
+              <ColorPicker label="اللون الأساسي" value={form.primaryColor} onChange={(v) => update("primaryColor", v)} testId="input-primary-color" />
+              <ColorPicker label="لون الأزرار والروابط" value={form.accentColor} onChange={(v) => update("accentColor", v)} testId="input-accent-color" />
+
+              <div>
+                <Label>نمط الغلاف</Label>
+                <Select value={form.headerStyle} onValueChange={(v) => update("headerStyle", v)}>
+                  <SelectTrigger data-testid="select-header-style"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gradient">تدرج لوني</SelectItem>
+                    <SelectItem value="solid">لون موحد</SelectItem>
+                    <SelectItem value="image">صورة غلاف</SelectItem>
+                    <SelectItem value="minimal">بسيط (بدون خلفية)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {form.headerStyle === "image" && (
+                <FileUploadButton
+                  label="صورة الغلاف"
+                  currentUrl={form.coverImageUrl || undefined}
+                  onUploaded={(path) => update("coverImageUrl", path)}
+                  acceptTypes="image/*"
+                />
+              )}
+
+              <div>
+                <Label>نمط الأزرار</Label>
+                <Select value={form.buttonStyle} onValueChange={(v) => update("buttonStyle", v)}>
+                  <SelectTrigger data-testid="select-button-style"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="filled">ملوّن</SelectItem>
+                    <SelectItem value="outlined">محيّط</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>ثيم الصفحة</Label>
+                <Select value={form.themeMode} onValueChange={(v) => update("themeMode", v)}>
+                  <SelectTrigger data-testid="select-theme-mode"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">فاتح</SelectItem>
+                    <SelectItem value="dark">داكن</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1"><Eye className="h-4 w-4" /> معاينة مباشرة</Label>
+              <HeroPreview form={form} />
+              <p className="text-xs text-muted-foreground text-center">معاينة تقريبية - شاهد صفحتك الفعلية بعد الحفظ</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button onClick={handleSave} disabled={saveMutation.isPending} className="w-full md:w-auto" data-testid="button-save-profile">
+        {saveMutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حفظ البروفايل
+      </Button>
+    </div>
   );
 }
 

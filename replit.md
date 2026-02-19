@@ -68,7 +68,18 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - PDFs use IBM Plex Sans Arabic font, Mustanadak brand colors, RTL layout
 - Profile data (company name, address, tax number) shown in PDF headers
 
+## Profile Customization
+- Primary & accent color pickers (10 presets + custom hex/color input)
+- Avatar, logo, and cover image upload
+- Header styles: gradient, solid color, cover image, minimal
+- Button styles: filled or outlined
+- Theme mode: light or dark (applies to public profile page)
+- Live preview of customizations in My Page editor
+- Public profile dynamically renders all customization options
+- Safe fallback: if headerStyle=image but no cover uploaded, falls back to gradient
+
 ## Recent Changes
+- 2026-02-19: Added profile customization (colors, logo, cover, themes, button styles, live preview)
 - 2026-02-19: Added PDF download for invoices and contracts
 - 2026-02-19: Added tab locking (services/portfolio require profile), file upload support for services and portfolio
 - 2026-02-19: Initial full build of all pages and features
