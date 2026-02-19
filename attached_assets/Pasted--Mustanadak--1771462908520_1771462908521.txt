@@ -1,0 +1,577 @@
+
+أبغاك تبني لي تطبيق ويب كامل اسمه مستندك (Mustanadak) - منصة إدارة أعمال للمستقلين وأصحاب المشاريع الصغيرة.
+التقنيات المطلوبة:
+
+Frontend: Next.js 14 (App Router) + TypeScript + Tailwind CSS
+UI: shadcn/ui components
+Backend: Next.js API Routes + Server Actions
+Database: Supabase (PostgreSQL)
+Auth: Supabase Auth (email/password + Google login)
+File Storage: Supabase Storage (للصور والملفات)
+Email: Resend (للإشعارات)
+اللغة: عربي بالكامل (RTL) مع دعم التبديل للإنجليزية
+
+تصميم الواجهة:
+
+الاتجاه الافتراضي RTL (عربي)
+ألوان احترافية: أزرق داكن (#1B4F72) كلون أساسي، أزرق فاتح (#2E86C1) ثانوي، أخضر (#27AE60) للنجاح
+تصميم نظيف وبسيط وحديث
+متجاوب بالكامل (Mobile-first)
+الخط: IBM Plex Sans Arabic للعربي، Inter للإنجليزي
+Sidebar navigation على اليمين (لأنه عربي RTL)
+Dark mode و Light mode
+
+
+1. نظام التسجيل والدخول (Authentication)
+صفحة التسجيل (/register):
+
+الحقول: الاسم الكامل، البريد الإلكتروني، كلمة المرور، تأكيد كلمة المرور، رقم الجوال (اختياري)
+زر "سجّل حساب جديد"
+زر "سجّل بحساب Google"
+رابط "عندك حساب؟ سجّل دخول"
+تحقق من قوة كلمة المرور (8 أحرف على الأقل، حرف كبير، رقم)
+إرسال بريد تأكيد بعد التسجيل
+بعد التأكيد، يتوجه المستخدم لصفحة إعداد البروفايل
+
+صفحة إعداد البروفايل (Onboarding - /setup):
+تظهر مرة واحدة بعد أول تسجيل:
+
+اختيار username (يكون فريد - هذا رابط صفحته العامة mustanadak.com/username)
+رفع صورة شخصية
+وصف مختصر (Bio)
+مجال العمل (تصميم، برمجة، تسويق، استشارات، تصوير، كتابة، أخرى)
+زر "أكمل لاحقاً" + زر "ابدأ الآن"
+
+صفحة تسجيل الدخول (/login):
+
+البريد الإلكتروني + كلمة المرور
+زر "دخول بحساب Google"
+رابط "نسيت كلمة المرور؟"
+رابط "ما عندك حساب؟ سجّل الآن"
+
+نسيت كلمة المرور (/forgot-password):
+
+إدخال البريد الإلكتروني
+إرسال رابط إعادة تعيين
+صفحة إعادة تعيين كلمة المرور
+
+Middleware:
+
+حماية جميع الصفحات (ما عدا Login, Register, الصفحات العامة، وصفحات البورتفوليو)
+Redirect للداشبورد إذا المستخدم مسجل دخول وحاول يدخل Login/Register
+
+
+2. لوحة التحكم (Dashboard - /dashboard)
+الـ Layout:
+
+Sidebar يمين (لأنه RTL) فيه:
+
+لوقو مستندك
+الروابط: لوحة التحكم، العملاء، العقود، الفواتير، المشاريع، صفحتي العامة، الإعدادات
+أيقونة الإشعارات (مع badge للعدد)
+صورة المستخدم + اسمه في الأسفل مع dropdown (الإعدادات، تسجيل خروج)
+
+
+المحتوى على اليسار
+الـ Sidebar ينطوي في الجوال ويصير hamburger menu
+
+محتوى الداشبورد:
+
+ترحيب: "مرحباً، [اسم المستخدم] 👋"
+4 بطاقات إحصائية:
+
+إجمالي العملاء (أيقونة 👥)
+العقود النشطة (أيقونة 📋)
+فواتير معلقة (أيقونة 💰) مع المبلغ الإجمالي
+المشاريع الجارية (أيقونة 📊)
+
+
+آخر النشاطات: آخر 5 إجراءات (فاتورة جديدة، عميل جديد، إلخ) مع التاريخ والوقت
+فواتير تحتاج متابعة: قائمة الفواتير المتأخرة أو القريبة من الاستحقاق
+عقود تنتهي قريباً: العقود اللي باقي لها أقل من 30 يوم
+
+
+3. إدارة العملاء (Clients - /dashboard/clients)
+جدول قاعدة البيانات (clients):
+sqlCREATE TABLE clients (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  company TEXT,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'prospect', 'inactive')),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Row Level Security
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own clients" ON clients
+  FOR ALL USING (auth.uid() = user_id);
+صفحة قائمة العملاء (/dashboard/clients):
+
+زر "إضافة عميل" في الأعلى
+شريط بحث (بحث بالاسم، الشركة، الإيميل)
+فلترة حسب الحالة (الكل، نشط، محتمل، غير نشط)
+جدول يعرض: الاسم، الشركة، الإيميل، الجوال، الحالة، تاريخ الإضافة
+لكل صف: أيقونة تعديل + أيقونة حذف (مع تأكيد)
+Pagination (20 عميل في الصفحة)
+
+نافذة إضافة/تعديل عميل (Modal):
+
+الاسم (مطلوب)
+البريد الإلكتروني
+رقم الجوال
+اسم الشركة
+الحالة (نشط / محتمل / غير نشط) - Select dropdown
+ملاحظات (textarea)
+أزرار: حفظ + إلغاء
+
+صفحة تفاصيل العميل (/dashboard/clients/[id]):
+
+معلومات العميل الأساسية مع زر تعديل
+تبويبات (Tabs):
+
+العقود: عقود هذا العميل
+الفواتير: فواتير هذا العميل
+المشاريع: مشاريع هذا العميل
+الملاحظات: سجل ملاحظات مع تاريخ
+
+
+
+
+4. إدارة العقود (Contracts - /dashboard/contracts)
+جدول قاعدة البيانات (contracts):
+sqlCREATE TABLE contracts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  content TEXT, -- محتوى العقد (Rich Text)
+  value DECIMAL(12,2),
+  currency TEXT DEFAULT 'SAR',
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'completed', 'expired', 'terminated')),
+  start_date DATE,
+  end_date DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE contracts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own contracts" ON contracts
+  FOR ALL USING (auth.uid() = user_id);
+صفحة قائمة العقود (/dashboard/contracts):
+
+زر "إنشاء عقد جديد"
+فلترة: الحالة (الكل، مسودة، نشط، مكتمل، منتهي، ملغي)
+بحث بالعنوان أو اسم العميل
+عرض كـ Cards أو جدول (toggle)
+كل عقد يعرض: العنوان، العميل، القيمة، الحالة (مع لون)، تاريخ البداية والنهاية
+
+صفحة إنشاء/تعديل عقد (/dashboard/contracts/new أو /[id]/edit):
+
+العنوان (مطلوب)
+اختيار العميل (searchable dropdown من العملاء الموجودين)
+الوصف
+قيمة العقد + العملة (ريال سعودي افتراضي)
+تاريخ البداية + تاريخ النهاية
+الحالة
+محتوى العقد: Rich Text Editor بسيط (عناوين، bold، قوائم)
+قوالب جاهزة: زر "استخدم قالب" يعرض قوالب عقود جاهزة (عقد خدمات، عقد مشروع، عقد استشارات)
+أزرار: حفظ كمسودة، حفظ وتفعيل، تصدير PDF
+
+قوالب العقود:
+سوّ 3 قوالب عقود جاهزة بالعربي:
+
+عقد تقديم خدمات: يشمل بيانات الطرفين، نطاق العمل، المقابل المالي، مدة العقد، شروط الإنهاء
+عقد مشروع: يشمل وصف المشروع، المراحل والتسليمات، الجدول الزمني، الدفعات
+عقد استشارات: يشمل نطاق الاستشارة، الأتعاب، السرية، المدة
+
+تصدير PDF:
+
+تصدير العقد كملف PDF احترافي
+يشمل: لوقو المستخدم (إذا موجود)، بيانات الطرفين، محتوى العقد، مكان التوقيع
+
+
+5. إدارة الفواتير (Invoices - /dashboard/invoices)
+جداول قاعدة البيانات:
+sqlCREATE TABLE invoices (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+  invoice_number TEXT NOT NULL, -- رقم تسلسلي تلقائي
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'paid', 'overdue', 'cancelled')),
+  issue_date DATE DEFAULT CURRENT_DATE,
+  due_date DATE,
+  subtotal DECIMAL(12,2) DEFAULT 0,
+  vat_rate DECIMAL(5,2) DEFAULT 15.00,
+  vat_amount DECIMAL(12,2) DEFAULT 0,
+  total DECIMAL(12,2) DEFAULT 0,
+  notes TEXT,
+  payment_method TEXT, -- تحويل بنكي، نقدي، إلكتروني
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE invoice_items (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  invoice_id UUID REFERENCES invoices(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  quantity DECIMAL(10,2) DEFAULT 1,
+  unit_price DECIMAL(12,2) NOT NULL,
+  total DECIMAL(12,2) NOT NULL,
+  sort_order INT DEFAULT 0
+);
+
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own invoices" ON invoices
+  FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE invoice_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own invoice items" ON invoice_items
+  FOR ALL USING (
+    invoice_id IN (SELECT id FROM invoices WHERE user_id = auth.uid())
+  );
+صفحة قائمة الفواتير (/dashboard/invoices):
+
+زر "إنشاء فاتورة"
+5 تبويبات فلترة: الكل، مسودة، مرسلة، مدفوعة، متأخرة
+إحصائيات سريعة أعلى الصفحة: إجمالي المدفوع هذا الشهر، المعلق، المتأخر
+جدول: رقم الفاتورة، العميل، المبلغ، الحالة (badge ملون)، تاريخ الإصدار، تاريخ الاستحقاق
+أيقونات: عرض، تعديل، تحميل PDF، تغيير الحالة
+
+صفحة إنشاء/تعديل فاتورة (/dashboard/invoices/new أو /[id]/edit):
+
+بيانات المُرسل: تُسحب تلقائياً من بروفايل المستخدم (اسم، شركة، إيميل، جوال)
+بيانات العميل: اختيار من القائمة (searchable) أو إضافة عميل جديد
+رقم الفاتورة: يتولد تلقائياً (INV-0001, INV-0002...)
+تاريخ الإصدار + تاريخ الاستحقاق
+بنود الفاتورة (جدول ديناميكي):
+
+كل صف: الوصف، الكمية، سعر الوحدة، الإجمالي (يحسب تلقائي)
+زر "إضافة بند" + زر حذف لكل صف
+Drag & drop لترتيب البنود
+
+
+الحسابات (تحسب تلقائياً):
+
+المجموع الفرعي
+ضريبة القيمة المضافة (15%) - مع خيار تعديل النسبة أو إلغائها
+الإجمالي
+
+
+ملاحظات: حقل نصي (شروط الدفع، معلومات التحويل البنكي)
+Preview: معاينة الفاتورة كما ستظهر في PDF
+أزرار: حفظ كمسودة، إرسال للعميل (بالإيميل)، تحميل PDF
+
+تصميم الفاتورة PDF:
+
+تصميم احترافي نظيف
+لوقو المستخدم (إذا موجود) في الأعلى
+بيانات المرسل على اليمين، بيانات العميل على اليسار
+جدول البنود
+المجاميع
+ملاحظات في الأسفل
+اللغة عربية (RTL)
+
+
+6. إدارة المشاريع (Projects - /dashboard/projects)
+جداول قاعدة البيانات:
+sqlCREATE TABLE projects (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+  contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'on_hold', 'completed', 'cancelled')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  start_date DATE,
+  deadline DATE,
+  budget DECIMAL(12,2),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE tasks (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'review', 'done')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  due_date DATE,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own projects" ON projects
+  FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own tasks" ON tasks
+  FOR ALL USING (
+    project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())
+  );
+صفحة قائمة المشاريع (/dashboard/projects):
+
+زر "مشروع جديد"
+عرض كـ Cards (افتراضي) أو جدول
+كل كارد يعرض: اسم المشروع، العميل، الحالة (badge)، الأولوية، الموعد النهائي، progress bar (نسبة المهام المكتملة)
+فلترة: الحالة، الأولوية، العميل
+
+صفحة تفاصيل المشروع (/dashboard/projects/[id]):
+
+معلومات المشروع (اسم، عميل، عقد، ميزانية، تواريخ)
+Kanban Board للمهام - 4 أعمدة:
+
+قائمة المهام (To Do)
+قيد التنفيذ (In Progress)
+للمراجعة (Review)
+مكتمل (Done)
+
+
+Drag & drop المهام بين الأعمدة
+إضافة مهمة: عنوان + وصف (اختياري) + أولوية + تاريخ استحقاق
+تعديل/حذف المهمة من خلال كلك عليها (يفتح modal)
+
+
+7. الصفحة العامة - بورتفوليو (Public Page - /[username])
+جداول قاعدة البيانات:
+sqlCREATE TABLE profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  username TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  bio TEXT,
+  avatar_url TEXT,
+  profession TEXT, -- مجال العمل
+  location TEXT,
+  email_public TEXT, -- إيميل يظهر في الصفحة العامة
+  phone_public TEXT,
+  website TEXT,
+  social_links JSONB DEFAULT '{}', -- {"twitter": "url", "linkedin": "url", "instagram": "url", "whatsapp": "number"}
+  theme TEXT DEFAULT 'default', -- اسم الثيم
+  primary_color TEXT DEFAULT '#1B4F72',
+  is_public BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE services (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL(12,2),
+  price_type TEXT DEFAULT 'fixed' CHECK (price_type IN ('fixed', 'hourly', 'negotiable')),
+  sort_order INT DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE portfolio_items (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  image_url TEXT,
+  link TEXT,
+  category TEXT,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE contact_messages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  sender_name TEXT NOT NULL,
+  sender_email TEXT NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Public access for profile pages
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public profiles are viewable" ON profiles
+  FOR SELECT USING (is_public = true);
+CREATE POLICY "Users can manage own profile" ON profiles
+  FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public services are viewable" ON services
+  FOR SELECT USING (
+    profile_id IN (SELECT id FROM profiles WHERE is_public = true)
+  );
+CREATE POLICY "Users can manage own services" ON services
+  FOR ALL USING (
+    profile_id IN (SELECT id FROM profiles WHERE user_id = auth.uid())
+  );
+
+-- نفس السياسة لـ portfolio_items و contact_messages
+ALTER TABLE portfolio_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public portfolio viewable" ON portfolio_items
+  FOR SELECT USING (
+    profile_id IN (SELECT id FROM profiles WHERE is_public = true)
+  );
+CREATE POLICY "Users can manage own portfolio" ON portfolio_items
+  FOR ALL USING (
+    profile_id IN (SELECT id FROM profiles WHERE user_id = auth.uid())
+  );
+
+ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anyone can send messages" ON contact_messages
+  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can read own messages" ON contact_messages
+  FOR SELECT USING (
+    profile_id IN (SELECT id FROM profiles WHERE user_id = auth.uid())
+  );
+الصفحة العامة (/[username]) - هذي الصفحة اللي يشوفها الزوار:
+صفحة landing page احترافية تحتوي على:
+
+Header: صورة المستخدم، الاسم، المهنة، النبذة، الموقع
+روابط التواصل الاجتماعي: أيقونات (Twitter/X, LinkedIn, Instagram, WhatsApp)
+قسم الخدمات: كاردات لكل خدمة (العنوان، الوصف، السعر أو "تواصل للتسعير")
+معرض الأعمال: Grid من الأعمال السابقة (صورة + عنوان + وصف) - كلك عليها يفتح Modal بالتفاصيل
+نموذج تواصل: اسم المرسل، إيميله، رسالته + زر إرسال
+Footer: "تم الإنشاء بواسطة مستندك" مع رابط للمنصة
+التصميم يكون responsive وجميل وبسيط
+يدعم العربي والإنجليزي حسب لغة البروفايل
+
+إدارة الصفحة العامة من الداشبورد (/dashboard/my-page):
+
+تبويبات: البروفايل، الخدمات، معرض الأعمال، الرسائل، الإعدادات
+البروفايل: تعديل جميع بيانات البروفايل + رفع الصورة
+الخدمات: إضافة/تعديل/حذف/ترتيب الخدمات
+معرض الأعمال: رفع صور + عنوان + وصف + رابط + تصنيف - drag & drop للترتيب
+الرسائل: inbox للرسائل الواردة من نموذج التواصل (مع badge للغير مقروء)
+الإعدادات: تفعيل/تعطيل الصفحة، اختيار اللون الأساسي
+زر "معاينة صفحتي" يفتح الصفحة العامة في تبويب جديد
+
+
+8. نظام الإشعارات (Notifications)
+جدول قاعدة البيانات:
+sqlCREATE TABLE notifications (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL, -- 'invoice_overdue', 'contract_expiring', 'new_message', 'payment_received', 'task_due'
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT, -- رابط للصفحة المعنية
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own notifications" ON notifications
+  FOR ALL USING (auth.uid() = user_id);
+أنواع الإشعارات:
+
+فاتورة متأخرة: "الفاتورة INV-0005 للعميل [اسم] متأخرة منذ [عدد] أيام"
+عقد ينتهي قريباً: "العقد [عنوان] مع [عميل] ينتهي خلال [عدد] أيام"
+رسالة جديدة: "رسالة جديدة من [اسم] عبر صفحتك العامة"
+مهمة مستحقة: "المهمة [عنوان] في مشروع [اسم] مستحقة اليوم"
+تأكيد الدفع: "تم تسجيل دفعة بمبلغ [مبلغ] ر.س للفاتورة [رقم]"
+
+واجهة الإشعارات:
+
+أيقونة الجرس في الـ Sidebar مع badge أحمر لعدد الغير مقروءة
+كلك عليها يفتح dropdown يعرض آخر 10 إشعارات
+كل إشعار: أيقونة حسب النوع + العنوان + الوقت (منذ 5 دقائق، منذ ساعة، إلخ)
+كلك على الإشعار يوديه للصفحة المعنية ويعلّمه كمقروء
+رابط "عرض كل الإشعارات" يفتح صفحة كاملة (/dashboard/notifications)
+زر "تعليم الكل كمقروء"
+
+Cron Job / Background:
+
+دالة تتشيك يومياً على:
+
+فواتير متأخرة (تاريخ الاستحقاق فات والحالة مو "مدفوعة")
+عقود تنتهي خلال 7 أيام و 30 يوم
+مهام مستحقة اليوم أو غداً
+
+
+تنشئ إشعارات تلقائياً
+(اختياري) ترسل بريد إلكتروني للإشعارات المهمة
+
+
+9. الإعدادات (Settings - /dashboard/settings)
+تبويبات الإعدادات:
+
+الحساب: تعديل الاسم، الإيميل، كلمة المرور، رقم الجوال
+بيانات الفوترة: اسم الشركة/النشاط، العنوان، الرقم الضريبي (اختياري)، رفع اللوقو
+الإشعارات: تفعيل/تعطيل كل نوع من الإشعارات + إشعارات البريد
+المظهر: الوضع الداكن/الفاتح، اللغة (عربي/إنجليزي)
+
+
+10. صفحة الهبوط (Landing Page - /)
+صفحة تسويقية للمنصة تحتوي على:
+
+Hero Section: عنوان جذاب "أدِر أعمالك كلها من مكان واحد" + وصف + زر "ابدأ مجاناً" + صورة/mockup للداشبورد
+المميزات: 5 مميزات رئيسية مع أيقونات (إدارة العملاء، العقود، الفواتير، المشاريع، الصفحة العامة)
+كيف يعمل: 3 خطوات (سجّل حساب → أضف عملاءك → أدِر أعمالك)
+الأسعار: 3 خطط (مجاني، بروفيشنال 49 ر.س/شهر، أعمال 99 ر.س/شهر)
+Footer: روابط (عن المنصة، تواصل معنا، سياسة الخصوصية)
+تصميم عصري وجذاب
+
+
+11. ملاحظات تقنية مهمة:
+الأمان:
+
+Row Level Security (RLS) على كل الجداول - المستخدم يشوف بياناته فقط
+تحقق من المدخلات (Validation) في Frontend و Backend
+CSRF protection
+Rate limiting على API routes
+
+الأداء:
+
+Server-side rendering للصفحات العامة (SEO)
+Client-side للداشبورد
+Optimistic updates للتفاعلات السريعة
+Image optimization مع Next.js Image
+
+بنية الملفات:
+app/
+├── (auth)/
+│   ├── login/page.tsx
+│   ├── register/page.tsx
+│   └── forgot-password/page.tsx
+├── (dashboard)/
+│   └── dashboard/
+│       ├── page.tsx (لوحة التحكم)
+│       ├── clients/
+│       ├── contracts/
+│       ├── invoices/
+│       ├── projects/
+│       ├── my-page/
+│       ├── notifications/
+│       └── settings/
+├── [username]/page.tsx (الصفحة العامة)
+├── page.tsx (Landing page)
+└── layout.tsx
+Environment Variables المطلوبة:
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+RESEND_API_KEY=
+NEXT_PUBLIC_APP_URL=
+
+مهم جداً:
+
+كل النصوص والواجهات باللغة العربية
+اتجاه الصفحة RTL دائماً
+التصميم متجاوب (يشتغل على الجوال بشكل ممتاز)
+استخدم loading states و skeletons وقت تحميل البيانات
+رسائل خطأ واضحة بالعربي
+Empty states جميلة (مثلاً: "ما عندك عملاء بعد، أضف أول عميل!")
+Toast notifications للنجاح والخطأ
+تأكيد قبل الحذف دائماً
+
+ابدأ بالتنفيذ خطوة خطوة، وإذا واجهتك أي مشكلة أو احتجت توضيح، اسألني.
