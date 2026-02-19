@@ -170,7 +170,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteClient(id: string, userId: string) {
-    const result = await db.delete(clients).where(and(eq(clients.id, id), eq(clients.userId, userId)));
+    const [contractCount] = await db.select({ count: count() }).from(contracts)
+      .where(and(eq(contracts.clientId, id), eq(contracts.userId, userId)));
+    const [invoiceCount] = await db.select({ count: count() }).from(invoices)
+      .where(and(eq(invoices.clientId, id), eq(invoices.userId, userId)));
+    const [projectCount] = await db.select({ count: count() }).from(projects)
+      .where(and(eq(projects.clientId, id), eq(projects.userId, userId)));
+    const total = contractCount.count + invoiceCount.count + projectCount.count;
+    if (total > 0) {
+      throw new Error(`CLIENT_HAS_RELATIONS:${contractCount.count}:${invoiceCount.count}:${projectCount.count}`);
+    }
+    await db.delete(clients).where(and(eq(clients.id, id), eq(clients.userId, userId)));
     return true;
   }
 

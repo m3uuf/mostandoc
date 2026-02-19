@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
 import { registerAuthRoutes } from "./replit_integrations/auth/routes";
@@ -29,6 +30,34 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً." },
+  });
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "تم تجاوز الحد المسموح من محاولات الدخول. حاول لاحقاً." },
+  });
+
+  const contactLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "تم تجاوز الحد المسموح من الرسائل. حاول لاحقاً." },
+  });
+
+  app.use("/api/login", authLimiter);
+  app.use("/api/callback", authLimiter);
+  app.use("/api/", generalLimiter);
 
   await setupAuth(app);
   registerAuthRoutes(app);
@@ -133,9 +162,15 @@ export async function registerRoutes(
 
   app.delete("/api/clients/:id", isAuthenticated, async (req, res) => {
     try {
-      await storage.deleteClient(req.params.id, getUserId(req));
+      await storage.deleteClient(req.params.id as string, getUserId(req));
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.startsWith("CLIENT_HAS_RELATIONS")) {
+        const [, contracts, invoices, projects] = error.message.split(":");
+        return res.status(400).json({
+          message: `لا يمكن حذف العميل لأنه مرتبط بـ ${contracts} عقد و ${invoices} فاتورة و ${projects} مشروع. يرجى حذف أو نقل البيانات المرتبطة أولاً.`
+        });
+      }
       res.status(500).json({ message: "فشل في حذف العميل" });
     }
   });
@@ -542,7 +577,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/public/:username/contact", async (req, res) => {
+  app.post("/api/public/:username/contact", contactLimiter, async (req, res) => {
     try {
       const profile = await storage.getProfileByUsername(req.params.username);
       if (!profile) return res.status(404).json({ message: "الصفحة غير موجودة" });

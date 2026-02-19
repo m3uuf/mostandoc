@@ -63,12 +63,23 @@ export default function ClientsPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/clients/${id}`),
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/clients/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "فشل في حذف العميل");
+      }
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       setDeleteConfirm(null);
       setPage(1);
       toast({ title: "تم حذف العميل" });
+    },
+    onError: (error: Error) => {
+      setDeleteConfirm(null);
+      toast({ title: error.message, variant: "destructive" });
     },
   });
 

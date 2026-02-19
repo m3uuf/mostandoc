@@ -20,9 +20,9 @@ const steps = [
 ];
 
 const plans = [
-  { name: "مجاني", price: "0", period: "مجاناً للأبد", features: ["5 عملاء", "10 فواتير شهرياً", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ مجاناً" },
-  { name: "بروفيشنال", price: "49", period: "ر.س / شهرياً", features: ["عملاء غير محدودين", "فواتير غير محدودة", "مشاريع غير محدودة", "قوالب عقود", "تصدير PDF"], cta: "اشترك الآن", popular: true },
-  { name: "أعمال", price: "99", period: "ر.س / شهرياً", features: ["كل مميزات بروفيشنال", "فريق عمل (حتى 5)", "تقارير متقدمة", "دعم أولوي", "ربط API"], cta: "تواصل معنا" },
+  { name: "المبتدئ", price: "29", period: "ر.س / شهرياً", features: ["15 عميل", "20 فاتورة شهرياً", "5 عقود", "3 مشاريع", "صفحة عامة أساسية"], cta: "ابدأ الآن", popular: false },
+  { name: "المحترف", price: "59", period: "ر.س / شهرياً", features: ["عملاء غير محدودين", "فواتير غير محدودة", "قوالب عقود جاهزة", "تخصيص الصفحة العامة", "تصدير PDF"], cta: "اشترك الآن", popular: true },
+  { name: "الأعمال", price: "99", period: "ر.س / شهرياً", features: ["كل مميزات المحترف", "فريق عمل (حتى 3 أعضاء)", "دومين مخصص", "ربط API", "دعم أولوي"], cta: "تواصل معنا", popular: false },
 ];
 
 export default function Landing() {
@@ -40,7 +40,7 @@ export default function Landing() {
               <a href="/api/login" data-testid="button-login">تسجيل الدخول</a>
             </Button>
             <Button asChild>
-              <a href="/api/login" data-testid="button-register">ابدأ مجاناً</a>
+              <a href="/api/login" data-testid="button-register">جرّب مجاناً</a>
             </Button>
           </div>
         </div>
@@ -59,7 +59,7 @@ export default function Landing() {
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <Button size="lg" className="bg-[#E8752A] border-[#E8752A]" asChild>
               <a href="/api/login" data-testid="button-hero-cta">
-                ابدأ مجاناً
+                جرّب مجاناً 14 يوم
                 <ArrowLeft className="mr-2 h-5 w-5" />
               </a>
             </Button>
@@ -130,6 +130,7 @@ export default function Landing() {
             </Card>
           ))}
         </div>
+        <p className="text-center text-sm text-muted-foreground mt-6" data-testid="text-free-trial-note">تجربة مجانية 14 يوم — بدون بطاقة ائتمان</p>
       </section>
 
       <footer className="border-t bg-muted/30">
