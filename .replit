@@ -40,3 +40,9 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_object_storage:2.0.0"]
+
+[userenv]
+
+[userenv.shared]
+STRIPE_PUBLISHABLE_KEY = "pk_live_51Laf6OB8CpW1YeE6ydl5ESsQRd30JivOtuvStbgvKLXJMOS1morrWcFsRF3RQjxyp1DJdg9vheCNeCOSbxwcpfQ700KTXV8200"
+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 = "STRIPE_SECRET_KEY"
