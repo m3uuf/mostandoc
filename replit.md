@@ -89,7 +89,21 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Landing page pricing buttons trigger Stripe Checkout (or login redirect if unauthenticated)
 - Secrets: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY (STRIPE_WEBHOOK_SECRET optional for dev)
 
+## Email Service (Password Reset)
+- Uses Resend (resend.com) for sending password reset emails
+- Secret: RESEND_API_KEY (stored manually, not via Replit connector)
+- From address: configured via RESEND_FROM_EMAIL env var, defaults to noreply@resend.dev
+- Password reset tokens expire after 1 hour
+
+## Social Login
+- Google OAuth: Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets
+- Facebook OAuth: Requires FACEBOOK_APP_ID and FACEBOOK_APP_SECRET secrets
+- Apple Sign-In: UI button present but not yet implemented (disabled)
+- Social login buttons are conditionally enabled based on available credentials (GET /api/auth/providers)
+- OAuth callbacks: /api/auth/google/callback, /api/auth/facebook/callback
+
 ## Recent Changes
+- 2026-02-20: Added forgot password flow (Resend email), phone field, social login buttons (Google/Facebook/Apple)
 - 2026-02-20: Replaced Replit Auth with custom email/password auth (bcryptjs, session-based, /auth page)
 - 2026-02-19: Added Stripe subscription payments (checkout, portal, webhooks, subscription tab in settings)
 - 2026-02-19: Added profile customization (colors, logo, cover, themes, button styles, live preview)
