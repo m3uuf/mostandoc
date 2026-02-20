@@ -6,7 +6,7 @@ Arabic-first (RTL) business management web application for freelancers and small
 ## Tech Stack
 - **Frontend**: React + Vite, TailwindCSS, ShadCN UI, Wouter routing, TanStack Query
 - **Backend**: Express.js, Drizzle ORM, PostgreSQL
-- **Auth**: Replit Auth (OpenID Connect)
+- **Auth**: Custom email/password auth (bcryptjs, express-session, connect-pg-simple)
 - **Font**: IBM Plex Sans Arabic
 - **Design**: RTL layout, dark/light mode, Mustanadak brand colors
 
@@ -90,6 +90,7 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Secrets: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY (STRIPE_WEBHOOK_SECRET optional for dev)
 
 ## Recent Changes
+- 2026-02-20: Replaced Replit Auth with custom email/password auth (bcryptjs, session-based, /auth page)
 - 2026-02-19: Added Stripe subscription payments (checkout, portal, webhooks, subscription tab in settings)
 - 2026-02-19: Added profile customization (colors, logo, cover, themes, button styles, live preview)
 - 2026-02-19: Added PDF download for invoices and contracts

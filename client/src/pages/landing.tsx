@@ -34,7 +34,7 @@ export default function Landing() {
 
   const handleSubscribe = async (planId: string) => {
     if (!user) {
-      window.location.href = "/api/login";
+      window.location.href = "/auth";
       return;
     }
     setLoadingPlan(planId);
@@ -60,10 +60,10 @@ export default function Landing() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Button variant="ghost" asChild>
-              <a href="/api/login" data-testid="button-login">تسجيل الدخول</a>
+              <a href="/auth" data-testid="button-login">تسجيل الدخول</a>
             </Button>
             <Button asChild>
-              <a href="/api/login" data-testid="button-register">جرّب مجاناً</a>
+              <a href="/auth" data-testid="button-register">جرّب مجاناً</a>
             </Button>
           </div>
         </div>
@@ -81,7 +81,7 @@ export default function Landing() {
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <Button size="lg" className="bg-[#E8752A] border-[#E8752A]" asChild>
-              <a href="/api/login" data-testid="button-hero-cta">
+              <a href="/auth" data-testid="button-hero-cta">
                 جرّب مجاناً 14 يوم
                 <ArrowLeft className="mr-2 h-5 w-5" />
               </a>

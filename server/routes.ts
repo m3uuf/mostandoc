@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replit_integrations/auth/replitAuth";
-import { registerAuthRoutes } from "./replit_integrations/auth/routes";
+import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword } from "./customAuth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import { registerSchema, loginSchema } from "@shared/models/auth";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-01-27.acacia" as any });
 
@@ -14,10 +14,6 @@ const PLANS: Record<string, { name: string; priceAmount: number }> = {
   pro: { name: "المحترف", priceAmount: 5900 },
   business: { name: "الأعمال", priceAmount: 9900 },
 };
-
-function getUserId(req: Request): string {
-  return (req.user as any)?.claims?.sub;
-}
 
 function getPagination(req: Request, defaultLimit = 20) {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -64,13 +60,101 @@ export async function registerRoutes(
     message: { message: "تم تجاوز الحد المسموح من الرسائل. حاول لاحقاً." },
   });
 
-  app.use("/api/login", authLimiter);
-  app.use("/api/callback", authLimiter);
+  app.use("/api/auth/login", authLimiter);
+  app.use("/api/auth/register", authLimiter);
   app.use("/api/", generalLimiter);
 
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  setupCustomAuth(app);
   registerObjectStorageRoutes(app);
+
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    try {
+      const parsed = registerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const { email, password, firstName, lastName } = parsed.data;
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        return res.status(400).json({ message: "البريد الإلكتروني مسجل بالفعل" });
+      }
+      const user = await createUser({ email, password, firstName, lastName });
+      req.session.userId = user.id;
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Register error:", error);
+      res.status(500).json({ message: "فشل في إنشاء الحساب" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const parsed = loginSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const { email, password } = parsed.data;
+      const user = await getUserByEmail(email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ message: "البريد الإلكتروني أو كلمة المرور غير صحيحة" });
+      }
+      const valid = await verifyPassword(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ message: "البريد الإلكتروني أو كلمة المرور غير صحيحة" });
+      }
+      req.session.userId = user.id;
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "فشل في تسجيل الدخول" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "فشل في تسجيل الخروج" });
+      }
+      res.clearCookie("connect.sid");
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await getUserById(getUserId(req));
+      if (!user) return res.status(401).json({ message: "المستخدم غير موجود" });
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Get user error:", error);
+      res.status(500).json({ message: "فشل في تحميل بيانات المستخدم" });
+    }
+  });
+
+  app.patch("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const { firstName, lastName, email } = req.body;
+      const { db: dbInstance } = await import("./db");
+      const { users } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+      const [user] = await dbInstance.update(users).set({
+        firstName: firstName || null,
+        lastName: lastName || null,
+        email: email || null,
+        updatedAt: new Date(),
+      }).where(eq(users.id, userId)).returning();
+      if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Update user error:", error);
+      res.status(500).json({ message: "فشل في تحديث بيانات الحساب" });
+    }
+  });
 
   app.get("/api/dashboard/stats", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -619,7 +703,8 @@ export async function registerRoutes(
       if (!PLANS[plan]) return res.status(400).json({ message: "باقة غير صالحة" });
 
       const userId = getUserId(req);
-      const userEmail = (req.user as any)?.claims?.email;
+      const userObj = await getUserById(userId);
+      const userEmail = userObj?.email;
 
       let sub = await storage.getSubscription(userId);
       let customerId: string;
