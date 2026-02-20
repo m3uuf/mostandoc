@@ -291,11 +291,46 @@ export async function registerRoutes(
     });
   }
 
+  if (process.env.APPLE_CLIENT_ID && process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY) {
+    const AppleStrategy = require("passport-apple");
+    passport.use(new AppleStrategy({
+      clientID: process.env.APPLE_CLIENT_ID,
+      teamID: process.env.APPLE_TEAM_ID,
+      keyID: process.env.APPLE_KEY_ID,
+      privateKeyString: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      callbackURL: "/api/auth/apple/callback",
+      scope: ["name", "email"],
+    }, async (_accessToken: string, _refreshToken: string, idToken: any, profile: any, done: any) => {
+      try {
+        const email = idToken?.email || profile?.email;
+        const firstName = profile?.name?.firstName;
+        const lastName = profile?.name?.lastName;
+        const user = await createOrUpdateSocialUser({
+          provider: "apple",
+          providerId: idToken?.sub || profile?.id,
+          email,
+          firstName,
+          lastName,
+        });
+        done(null, user);
+      } catch (err) {
+        done(err as Error);
+      }
+    }));
+
+    app.get("/api/auth/apple", passport.authenticate("apple", { session: false }));
+    app.post("/api/auth/apple/callback", passport.authenticate("apple", { session: false, failureRedirect: "/auth?error=apple" }), (req, res) => {
+      const user = req.user as any;
+      req.session.userId = user.id;
+      res.redirect("/dashboard");
+    });
+  }
+
   app.get("/api/auth/providers", (_req: Request, res: Response) => {
     res.json({
       google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
       facebook: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET),
-      apple: false,
+      apple: !!(process.env.APPLE_CLIENT_ID && process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY),
     });
   });
 

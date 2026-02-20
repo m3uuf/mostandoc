@@ -223,8 +223,8 @@ export default function AuthPage() {
                           {mode === "login" && (
                             <Button
                               type="button"
-                              variant="link"
-                              className="px-0 h-auto text-xs text-primary"
+                              variant="ghost"
+                              className="px-0 h-auto text-xs text-primary hover:bg-transparent"
                               onClick={() => switchMode("forgot")}
                               data-testid="button-forgot-password"
                             >
@@ -303,7 +303,8 @@ export default function AuthPage() {
                           type="button"
                           variant="outline"
                           className="w-full"
-                          disabled
+                          onClick={() => handleSocialLogin("apple")}
+                          disabled={!providers?.apple}
                           data-testid="button-login-apple"
                         >
                           <SiApple className="ml-2 h-4 w-4" />
