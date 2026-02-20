@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import AuthPage from "@/pages/auth-page";
+import ResetPasswordPage from "@/pages/reset-password";
 import Dashboard from "@/pages/dashboard";
 import ClientsPage from "@/pages/clients";
 import ContractsPage from "@/pages/contracts";
@@ -71,6 +72,7 @@ function Router() {
     return (
       <Switch>
         <Route path="/p/:username" component={PublicProfile} />
+        <Route path="/auth/reset-password" component={ResetPasswordPage} />
         <Route path="/"><Redirect to="/dashboard" /></Route>
         <Route path="/auth"><Redirect to="/dashboard" /></Route>
         <Route path="/dashboard/:rest*" component={AuthenticatedLayout} />
@@ -83,6 +85,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/p/:username" component={PublicProfile} />
+      <Route path="/auth/reset-password" component={ResetPasswordPage} />
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/dashboard/:rest*"><Redirect to="/auth" /></Route>

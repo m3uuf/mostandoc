@@ -3,9 +3,12 @@ import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
 import { storage } from "./storage";
-import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword } from "./customAuth";
+import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword } from "./customAuth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { registerSchema, loginSchema } from "@shared/models/auth";
+import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as FacebookStrategy } from "passport-facebook";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-01-27.acacia" as any });
 
@@ -73,12 +76,12 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ message: parsed.error.errors[0].message });
       }
-      const { email, password, firstName, lastName } = parsed.data;
+      const { email, password, firstName, lastName, phone } = parsed.data;
       const existing = await getUserByEmail(email);
       if (existing) {
         return res.status(400).json({ message: "البريد الإلكتروني مسجل بالفعل" });
       }
-      const user = await createUser({ email, password, firstName, lastName });
+      const user = await createUser({ email, password, firstName, lastName, phone });
       req.session.userId = user.id;
       const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
@@ -154,6 +157,146 @@ export async function registerRoutes(
       console.error("Update user error:", error);
       res.status(500).json({ message: "فشل في تحديث بيانات الحساب" });
     }
+  });
+
+  app.post("/api/auth/forgot-password", authLimiter, async (req: Request, res: Response) => {
+    try {
+      const parsed = forgotPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const user = await getUserByEmail(parsed.data.email);
+      if (!user) {
+        return res.json({ success: true, message: "إذا كان البريد الإلكتروني مسجلاً، سيتم إرسال رابط إعادة التعيين" });
+      }
+      const token = await generatePasswordResetToken(user.id);
+      const resetUrl = `${req.protocol}://${req.get("host")}/auth/reset-password?token=${token}`;
+      try {
+        const { Resend } = await import("resend");
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
+          to: user.email!,
+          subject: "إعادة تعيين كلمة المرور - مستندك",
+          html: `
+            <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #3B5FE5;">مستندك</h1>
+              </div>
+              <h2>إعادة تعيين كلمة المرور</h2>
+              <p>مرحباً ${user.firstName || ""},</p>
+              <p>لقد طلبت إعادة تعيين كلمة المرور الخاصة بك. اضغط على الزر أدناه:</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">إعادة تعيين كلمة المرور</a>
+              </div>
+              <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة ساعة واحدة فقط.</p>
+              <p style="color: #666; font-size: 14px;">إذا لم تطلب إعادة تعيين كلمة المرور، تجاهل هذه الرسالة.</p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error("Email send error:", emailError);
+      }
+      res.json({ success: true, message: "إذا كان البريد الإلكتروني مسجلاً، سيتم إرسال رابط إعادة التعيين" });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: "فشل في معالجة الطلب" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+    try {
+      const parsed = resetPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const result = await resetPassword(parsed.data.token, parsed.data.password);
+      if (!result) {
+        return res.status(400).json({ message: "الرابط غير صالح أو منتهي الصلاحية" });
+      }
+      res.json({ success: true, message: "تم إعادة تعيين كلمة المرور بنجاح" });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: "فشل في إعادة تعيين كلمة المرور" });
+    }
+  });
+
+  app.get("/api/auth/reset-password/validate", async (req: Request, res: Response) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(400).json({ valid: false });
+      const record = await validateResetToken(token);
+      res.json({ valid: !!record });
+    } catch (error) {
+      res.json({ valid: false });
+    }
+  });
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "/api/auth/google/callback",
+    }, async (_accessToken, _refreshToken, profile, done) => {
+      try {
+        const user = await createOrUpdateSocialUser({
+          provider: "google",
+          providerId: profile.id,
+          email: profile.emails?.[0]?.value,
+          firstName: profile.name?.givenName,
+          lastName: profile.name?.familyName,
+          profileImageUrl: profile.photos?.[0]?.value,
+        });
+        done(null, user);
+      } catch (err) {
+        done(err as Error);
+      }
+    }));
+
+    app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));
+    app.get("/api/auth/google/callback", passport.authenticate("google", { session: false, failureRedirect: "/auth?error=google" }), (req, res) => {
+      const user = req.user as any;
+      req.session.userId = user.id;
+      res.redirect("/dashboard");
+    });
+  }
+
+  if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
+    passport.use(new FacebookStrategy({
+      clientID: process.env.FACEBOOK_APP_ID,
+      clientSecret: process.env.FACEBOOK_APP_SECRET,
+      callbackURL: "/api/auth/facebook/callback",
+      profileFields: ["id", "emails", "name", "picture.type(large)"],
+    }, async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
+      try {
+        const user = await createOrUpdateSocialUser({
+          provider: "facebook",
+          providerId: profile.id,
+          email: profile.emails?.[0]?.value,
+          firstName: profile.name?.givenName,
+          lastName: profile.name?.familyName,
+          profileImageUrl: profile.photos?.[0]?.value,
+        });
+        done(null, user);
+      } catch (err) {
+        done(err as Error);
+      }
+    }));
+
+    app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email"], session: false }));
+    app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { session: false, failureRedirect: "/auth?error=facebook" }), (req, res) => {
+      const user = req.user as any;
+      req.session.userId = user.id;
+      res.redirect("/dashboard");
+    });
+  }
+
+  app.get("/api/auth/providers", (_req: Request, res: Response) => {
+    res.json({
+      google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+      facebook: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET),
+      apple: false,
+    });
   });
 
   app.get("/api/dashboard/stats", isAuthenticated, async (req: Request, res: Response) => {
