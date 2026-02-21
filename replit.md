@@ -89,11 +89,20 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Landing page pricing buttons trigger Stripe Checkout (or login redirect if unauthenticated)
 - Secrets: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY (STRIPE_WEBHOOK_SECRET optional for dev)
 
-## Email Service (Password Reset)
-- Uses Resend (resend.com) for sending password reset emails
+## Email Service
+- Uses Resend (resend.com) for sending password reset and email verification emails
 - Secret: RESEND_API_KEY (stored manually, not via Replit connector)
 - From address: configured via RESEND_FROM_EMAIL env var, defaults to noreply@resend.dev
 - Password reset tokens expire after 1 hour
+- Email verification tokens expire after 24 hours
+
+## Email Verification
+- New users receive verification email on registration (24-hour expiry token)
+- Social login users (Google/Facebook/Apple) are auto-verified
+- Dashboard shows amber banner for unverified users with resend and dismiss options
+- Verify endpoint: GET /api/auth/verify-email?token=xxx
+- Resend endpoint: POST /api/auth/resend-verification (authenticated)
+- Verify page: /auth/verify-email?token=xxx
 
 ## Social Login
 - Google OAuth: Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets
@@ -103,6 +112,7 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - OAuth callbacks: /api/auth/google/callback, /api/auth/facebook/callback
 
 ## Recent Changes
+- 2026-02-21: Added email verification on registration with dashboard banner and resend option
 - 2026-02-20: Added forgot password flow (Resend email), phone field, social login buttons (Google/Facebook/Apple)
 - 2026-02-20: Replaced Replit Auth with custom email/password auth (bcryptjs, session-based, /auth page)
 - 2026-02-19: Added Stripe subscription payments (checkout, portal, webhooks, subscription tab in settings)

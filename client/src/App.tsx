@@ -12,6 +12,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import AuthPage from "@/pages/auth-page";
 import ResetPasswordPage from "@/pages/reset-password";
+import VerifyEmailPage from "@/pages/verify-email";
 import Dashboard from "@/pages/dashboard";
 import ClientsPage from "@/pages/clients";
 import ContractsPage from "@/pages/contracts";
@@ -73,6 +74,7 @@ function Router() {
       <Switch>
         <Route path="/p/:username" component={PublicProfile} />
         <Route path="/auth/reset-password" component={ResetPasswordPage} />
+        <Route path="/auth/verify-email" component={VerifyEmailPage} />
         <Route path="/"><Redirect to="/dashboard" /></Route>
         <Route path="/auth"><Redirect to="/dashboard" /></Route>
         <Route path="/dashboard/:rest*" component={AuthenticatedLayout} />
@@ -86,6 +88,7 @@ function Router() {
     <Switch>
       <Route path="/p/:username" component={PublicProfile} />
       <Route path="/auth/reset-password" component={ResetPasswordPage} />
+      <Route path="/auth/verify-email" component={VerifyEmailPage} />
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/dashboard/:rest*"><Redirect to="/auth" /></Route>

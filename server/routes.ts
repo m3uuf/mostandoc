@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
 import { storage } from "./storage";
-import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword } from "./customAuth";
+import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
 import passport from "passport";
@@ -83,7 +83,37 @@ export async function registerRoutes(
       }
       const user = await createUser({ email, password, firstName, lastName, phone });
       req.session.userId = user.id;
-      const { passwordHash, ...safeUser } = user;
+
+      try {
+        const verifyToken = await generateEmailVerificationToken(user.id);
+        const verifyUrl = `${req.protocol}://${req.get("host")}/auth/verify-email?token=${verifyToken}`;
+        const { Resend } = await import("resend");
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
+          to: email,
+          subject: "تفعيل بريدك الإلكتروني - مستندك",
+          html: `
+            <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #3B5FE5;">مستندك</h1>
+              </div>
+              <h2>تفعيل البريد الإلكتروني</h2>
+              <p>مرحباً ${firstName},</p>
+              <p>شكراً لتسجيلك في مستندك! اضغط على الزر أدناه لتفعيل بريدك الإلكتروني:</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${verifyUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">تفعيل البريد الإلكتروني</a>
+              </div>
+              <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة 24 ساعة.</p>
+              <p style="color: #666; font-size: 14px;">إذا لم تقم بإنشاء حساب، تجاهل هذه الرسالة.</p>
+            </div>
+          `,
+        });
+      } catch (emailError) {
+        console.error("Verification email error:", emailError);
+      }
+
+      const { passwordHash: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (error) {
       console.error("Register error:", error);
@@ -229,6 +259,61 @@ export async function registerRoutes(
       res.json({ valid: !!record });
     } catch (error) {
       res.json({ valid: false });
+    }
+  });
+
+  app.get("/api/auth/verify-email", async (req: Request, res: Response) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(400).json({ message: "رمز التفعيل مطلوب" });
+      const record = await verifyEmailToken(token);
+      if (!record) {
+        return res.status(400).json({ message: "رابط التفعيل غير صالح أو منتهي الصلاحية" });
+      }
+      res.json({ success: true, message: "تم تفعيل البريد الإلكتروني بنجاح" });
+    } catch (error) {
+      console.error("Verify email error:", error);
+      res.status(500).json({ message: "فشل في تفعيل البريد الإلكتروني" });
+    }
+  });
+
+  app.post("/api/auth/resend-verification", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserId(req);
+      const user = await getUserById(userId);
+      if (!user || !user.email) {
+        return res.status(400).json({ message: "لم يتم العثور على المستخدم" });
+      }
+      if (user.emailVerified) {
+        return res.json({ success: true, message: "البريد الإلكتروني مفعل بالفعل" });
+      }
+      const verifyToken = await generateEmailVerificationToken(user.id);
+      const verifyUrl = `${req.protocol}://${req.get("host")}/auth/verify-email?token=${verifyToken}`;
+      const { Resend } = await import("resend");
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
+        to: user.email,
+        subject: "تفعيل بريدك الإلكتروني - مستندك",
+        html: `
+          <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #3B5FE5;">مستندك</h1>
+            </div>
+            <h2>تفعيل البريد الإلكتروني</h2>
+            <p>مرحباً ${user.firstName || ""},</p>
+            <p>اضغط على الزر أدناه لتفعيل بريدك الإلكتروني:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${verifyUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">تفعيل البريد الإلكتروني</a>
+            </div>
+            <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة 24 ساعة.</p>
+          </div>
+        `,
+      });
+      res.json({ success: true, message: "تم إرسال رابط التفعيل" });
+    } catch (error) {
+      console.error("Resend verification error:", error);
+      res.status(500).json({ message: "فشل في إرسال رابط التفعيل" });
     }
   });
 

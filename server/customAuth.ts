@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import type { Express, RequestHandler, Request } from "express";
 import { db } from "./db";
-import { users, passwordResetTokens } from "@shared/models/auth";
+import { users, passwordResetTokens, emailVerificationTokens } from "@shared/models/auth";
 import { eq, and, gt } from "drizzle-orm";
 
 declare module "express-session" {
@@ -127,6 +127,7 @@ export async function createOrUpdateSocialUser(data: {
     lastName: data.lastName || null,
     profileImageUrl: data.profileImageUrl || null,
     authProvider: data.provider,
+    emailVerified: true,
     ...providerField,
   }).returning();
   return user;
@@ -166,4 +167,30 @@ export async function resetPassword(token: string, newPassword: string) {
   await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, record.userId));
   await db.update(passwordResetTokens).set({ used: true }).where(eq(passwordResetTokens.id, record.id));
   return true;
+}
+
+export async function generateEmailVerificationToken(userId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await db.insert(emailVerificationTokens).values({
+    userId,
+    token,
+    expiresAt,
+  });
+  return token;
+}
+
+export async function verifyEmailToken(token: string) {
+  const [record] = await db.select().from(emailVerificationTokens).where(
+    and(
+      eq(emailVerificationTokens.token, token),
+      eq(emailVerificationTokens.used, false),
+      gt(emailVerificationTokens.expiresAt, new Date())
+    )
+  );
+  if (!record) return null;
+
+  await db.update(users).set({ emailVerified: true, updatedAt: new Date() }).where(eq(users.id, record.userId));
+  await db.update(emailVerificationTokens).set({ used: true }).where(eq(emailVerificationTokens.id, record.id));
+  return record;
 }

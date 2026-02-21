@@ -7,6 +7,7 @@ interface AuthUser {
   firstName: string | null;
   lastName: string | null;
   profileImageUrl: string | null;
+  emailVerified: boolean | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
