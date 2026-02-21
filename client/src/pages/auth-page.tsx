@@ -265,7 +265,7 @@ export default function AuthPage() {
                     </Button>
                   </form>
 
-                  {mode !== "forgot" && (
+                  {mode !== "forgot" && (providers?.google || providers?.facebook || providers?.apple) && (
                     <>
                       <div className="relative my-6">
                         <div className="absolute inset-0 flex items-center">
@@ -277,39 +277,42 @@ export default function AuthPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => handleSocialLogin("google")}
-                          disabled={!providers?.google}
-                          data-testid="button-login-google"
-                        >
-                          <SiGoogle className="ml-2 h-4 w-4" />
-                          {mode === "login" ? "تسجيل الدخول بحساب Google" : "التسجيل بحساب Google"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => handleSocialLogin("facebook")}
-                          disabled={!providers?.facebook}
-                          data-testid="button-login-facebook"
-                        >
-                          <SiFacebook className="ml-2 h-4 w-4 text-[#1877F2]" />
-                          {mode === "login" ? "تسجيل الدخول بحساب Facebook" : "التسجيل بحساب Facebook"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => handleSocialLogin("apple")}
-                          disabled={!providers?.apple}
-                          data-testid="button-login-apple"
-                        >
-                          <SiApple className="ml-2 h-4 w-4" />
-                          {mode === "login" ? "تسجيل الدخول بحساب Apple" : "التسجيل بحساب Apple"}
-                        </Button>
+                        {providers?.google && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => handleSocialLogin("google")}
+                            data-testid="button-login-google"
+                          >
+                            <SiGoogle className="ml-2 h-4 w-4" />
+                            {mode === "login" ? "تسجيل الدخول بحساب Google" : "التسجيل بحساب Google"}
+                          </Button>
+                        )}
+                        {providers?.facebook && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => handleSocialLogin("facebook")}
+                            data-testid="button-login-facebook"
+                          >
+                            <SiFacebook className="ml-2 h-4 w-4 text-[#1877F2]" />
+                            {mode === "login" ? "تسجيل الدخول بحساب Facebook" : "التسجيل بحساب Facebook"}
+                          </Button>
+                        )}
+                        {providers?.apple && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => handleSocialLogin("apple")}
+                            data-testid="button-login-apple"
+                          >
+                            <SiApple className="ml-2 h-4 w-4" />
+                            {mode === "login" ? "تسجيل الدخول بحساب Apple" : "التسجيل بحساب Apple"}
+                          </Button>
+                        )}
                       </div>
                     </>
                   )}
