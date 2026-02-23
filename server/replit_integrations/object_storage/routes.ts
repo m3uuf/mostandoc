@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
-import { isAuthenticated } from "../auth/replitAuth";
+import { isAuthenticated } from "../../customAuth";
 
 /**
  * Register object storage routes for file uploads.
