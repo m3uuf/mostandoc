@@ -43,20 +43,31 @@ const FIELD_TYPES = [
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+
     const renderPdf = async () => {
       try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error("Failed to fetch PDF");
+        const arrayBuffer = await response.arrayBuffer();
 
-        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+        const pdfjsLib = await import("pdfjs-dist/build/pdf.min.mjs");
+        const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs");
+        pdfjsLib.GlobalWorkerOptions.workerPort = new workerModule.default();
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.5 });
+
+        const containerWidth = containerRef.current?.clientWidth || 800;
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const scale = containerWidth / unscaledViewport.width;
+        const viewport = page.getViewport({ scale });
 
         const canvas = canvasRef.current;
         if (!canvas || cancelled) return;
@@ -91,7 +102,7 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full" ref={containerRef}>
       {loading && (
         <div className="w-full min-h-[600px] flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

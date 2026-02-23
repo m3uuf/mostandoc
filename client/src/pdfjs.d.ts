@@ -1,0 +1,7 @@
+declare module "pdfjs-dist/build/pdf.min.mjs" {
+  export * from "pdfjs-dist";
+}
+declare module "pdfjs-dist/build/pdf.worker.min.mjs" {
+  const workerFactory: any;
+  export default workerFactory;
+}
