@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Document, DocumentField } from "@shared/schema";
+import type { Document, DocumentField, Client } from "@shared/schema";
+import { Users } from "lucide-react";
 
 interface FieldItem {
   id?: string;
@@ -99,6 +100,7 @@ export default function DocumentEditor() {
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [recipientName, setRecipientName] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigFieldId, setSigFieldId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -114,9 +116,14 @@ export default function DocumentEditor() {
     enabled: !!documentId,
   });
 
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
   useEffect(() => {
     if (doc) {
       setTitle(doc.title);
+      if (doc.clientId) setSelectedClientId(doc.clientId);
       if (doc.fields?.length) {
         setFields(doc.fields.map((f) => ({
           id: f.id,
@@ -166,16 +173,20 @@ export default function DocumentEditor() {
   const sendMutation = useMutation({
     mutationFn: async () => {
       await saveMutation.mutateAsync();
-      await apiRequest("PATCH", `/api/documents/${documentId}`, {
+      const payload: any = {
         status: "sent",
         recipientName,
         recipientEmail,
-      });
+      };
+      if (selectedClientId && selectedClientId !== "__none__") payload.clientId = selectedClientId;
+      else payload.clientId = null;
+      await apiRequest("PATCH", `/api/documents/${documentId}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents", documentId] });
       setSendDialogOpen(false);
-      toast({ title: "تم الإرسال", description: "تم تجهيز المستند للتوقيع" });
+      const emailMsg = recipientEmail ? "وتم إرسال بريد إلكتروني للمستلم" : "تم تجهيز المستند للتوقيع";
+      toast({ title: "تم الإرسال", description: emailMsg });
     },
   });
 
@@ -558,6 +569,39 @@ export default function DocumentEditor() {
             <DialogTitle>إرسال للتوقيع</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            {clients && clients.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  ربط بعميل (اختياري)
+                </Label>
+                <Select
+                  value={selectedClientId}
+                  onValueChange={(val) => {
+                    setSelectedClientId(val);
+                    if (val && val !== "__none__") {
+                      const client = clients.find((c) => c.id === val);
+                      if (client) {
+                        setRecipientName(client.name);
+                        if (client.email) setRecipientEmail(client.email);
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-client">
+                    <SelectValue placeholder="اختر عميلاً من القائمة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">بدون ربط بعميل</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c.company ? `- ${c.company}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>اسم المستلم</Label>
               <Input
@@ -568,7 +612,7 @@ export default function DocumentEditor() {
               />
             </div>
             <div className="space-y-2">
-              <Label>البريد الإلكتروني (اختياري)</Label>
+              <Label>البريد الإلكتروني</Label>
               <Input
                 type="email"
                 value={recipientEmail}
@@ -577,6 +621,7 @@ export default function DocumentEditor() {
                 dir="ltr"
                 data-testid="input-recipient-email"
               />
+              <p className="text-xs text-muted-foreground">سيتم إرسال رابط التوقيع لهذا البريد</p>
             </div>
             <div className="bg-muted p-3 rounded-lg">
               <p className="text-xs text-muted-foreground mb-2">رابط التوقيع:</p>
@@ -587,11 +632,11 @@ export default function DocumentEditor() {
             <Button
               className="w-full"
               onClick={() => sendMutation.mutate()}
-              disabled={!recipientName.trim() || sendMutation.isPending}
+              disabled={!recipientName.trim() || !recipientEmail.trim() || sendMutation.isPending}
               data-testid="button-submit-send"
             >
               {sendMutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-              إرسال
+              إرسال للتوقيع
             </Button>
           </div>
         </DialogContent>

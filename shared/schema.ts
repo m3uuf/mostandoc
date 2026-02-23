@@ -187,6 +187,7 @@ export const subscriptions = pgTable("subscriptions", {
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull(),
+  clientId: varchar("client_id"),
   title: text("title").notNull(),
   fileUrl: text("file_url").notNull(),
   fileType: text("file_type").notNull(),

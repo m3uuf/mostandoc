@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Document } from "@shared/schema";
+import type { Document, Client } from "@shared/schema";
+import { Users } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   draft: { label: "مسودة", variant: "secondary" },
@@ -36,6 +37,16 @@ export default function DocumentsPage() {
   const { data: documents, isLoading } = useQuery<Document[]>({
     queryKey: ["/api/documents"],
   });
+
+  const { data: clients } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const getClientName = (clientId: string | null) => {
+    if (!clientId || !clients) return null;
+    const client = clients.find((c) => c.id === clientId);
+    return client?.name || null;
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -200,9 +211,17 @@ export default function DocumentsPage() {
                 <CardContent onClick={() => navigate(`/dashboard/documents/${doc.id}`)}>
                   <div className="flex items-center justify-between">
                     <Badge variant={status?.variant || "secondary"}>{status?.label || doc.status}</Badge>
-                    {doc.recipientName && (
-                      <span className="text-xs text-muted-foreground">{doc.recipientName}</span>
-                    )}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {getClientName(doc.clientId) && (
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          {getClientName(doc.clientId)}
+                        </span>
+                      )}
+                      {doc.recipientName && !getClientName(doc.clientId) && (
+                        <span>{doc.recipientName}</span>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

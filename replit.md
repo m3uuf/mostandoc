@@ -116,13 +116,18 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Share documents via public links for signing without account
 - Field types: text, date, signature (using react-signature-canvas)
 - Document status workflow: draft → sent → signed
+- Email notification: Sends signing link via Resend when document is sent for signature
+- Client linking: Documents can be linked to registered clients (clientId field)
+- Send dialog auto-fills recipient name/email when a client is selected
+- PDF preview: Server-side conversion using pdftoppm (/api/pdf-preview endpoint)
 - Public signing page collects signer name, email, signature, and field values
 - API: /api/documents (CRUD), /api/documents/:id/fields, /api/documents/sign/:shareToken
-- Tables: documents, document_fields, document_signatures
+- Tables: documents (with clientId), document_fields, document_signatures
 - Pages: /dashboard/documents (list), /dashboard/documents/:id (editor), /sign/:token (public)
 - Sidebar nav: المستندات (FilePenLine icon)
 
 ## Recent Changes
+- 2026-02-23: Added email notification on document send, client linking for documents
 - 2026-02-23: Added document editor with drag-drop fields, signature pad, public signing links
 - 2026-02-21: Added email verification on registration with dashboard banner and resend option
 - 2026-02-20: Added forgot password flow (Resend email), phone field, social login buttons (Google/Facebook/Apple)

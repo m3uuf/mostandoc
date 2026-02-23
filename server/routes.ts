@@ -1204,6 +1204,52 @@ export async function registerRoutes(
     try {
       const doc = await storage.updateDocument(req.params.id, getUserId(req), req.body);
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+
+      if (req.body.status === "sent" && doc.recipientEmail && doc.shareToken) {
+        try {
+          const profile = await storage.getProfile(getUserId(req));
+          const senderName = profile?.businessName || profile?.name || "مستخدم مستندك";
+          const signUrl = `${req.protocol}://${req.get("host")}/sign/${doc.shareToken}`;
+
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
+            to: doc.recipientEmail,
+            subject: `${senderName} يطلب توقيعك على مستند: ${doc.title}`,
+            html: `
+              <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #3B5FE5, #2a4bc7); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
+                  <h1 style="color: white; margin: 0; font-size: 24px;">مستندك</h1>
+                </div>
+                <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                  <p style="font-size: 16px; color: #374151; margin-bottom: 8px;">مرحباً ${doc.recipientName || ""},</p>
+                  <p style="font-size: 15px; color: #6b7280; line-height: 1.8;">
+                    قام <strong>${senderName}</strong> بإرسال مستند بعنوان <strong>"${doc.title}"</strong> ويطلب توقيعك عليه.
+                  </p>
+                  <div style="text-align: center; margin: 30px 0;">
+                    <a href="${signUrl}" style="display: inline-block; background: #3B5FE5; color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold;">
+                      عرض وتوقيع المستند
+                    </a>
+                  </div>
+                  <p style="font-size: 13px; color: #9ca3af; text-align: center;">
+                    أو انسخ هذا الرابط في متصفحك:<br/>
+                    <a href="${signUrl}" style="color: #3B5FE5; word-break: break-all;">${signUrl}</a>
+                  </p>
+                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+                  <p style="font-size: 12px; color: #9ca3af; text-align: center;">
+                    هذا البريد مرسل تلقائياً من منصة مستندك
+                  </p>
+                </div>
+              </div>
+            `,
+          });
+          console.log(`Document signing email sent to ${doc.recipientEmail} for document ${doc.id}`);
+        } catch (emailError) {
+          console.error("Failed to send signing email:", emailError);
+        }
+      }
+
       res.json(doc);
     } catch (error) {
       console.error("Update document error:", error);
