@@ -3,6 +3,7 @@ import { db } from "./db";
 import {
   profiles, clients, contracts, invoices, invoiceItems, projects, projectTasks,
   services, portfolioItems, contactMessages, notifications, subscriptions,
+  documents, documentFields, documentSignatures,
   type Profile, type InsertProfile,
   type Client, type InsertClient,
   type Contract, type InsertContract,
@@ -15,6 +16,9 @@ import {
   type ContactMessage, type InsertContactMessage,
   type Notification, type InsertNotification,
   type Subscription,
+  type Document, type InsertDocument,
+  type DocumentField, type InsertDocumentField,
+  type DocumentSignature, type InsertDocumentSignature,
 } from "@shared/schema";
 
 export interface PaginatedResult<T> {
@@ -116,6 +120,22 @@ export interface IStorage {
   getSubscriptionByCustomerId(stripeCustomerId: string): Promise<Subscription | undefined>;
   upsertSubscription(data: Partial<Subscription> & { userId: string; stripeCustomerId: string }): Promise<Subscription>;
   updateSubscriptionByCustomerId(stripeCustomerId: string, data: Partial<Subscription>): Promise<Subscription | undefined>;
+
+  getDocuments(userId: string): Promise<Document[]>;
+  getDocument(id: string, userId: string): Promise<Document | undefined>;
+  getDocumentByShareToken(shareToken: string): Promise<Document | undefined>;
+  createDocument(data: InsertDocument): Promise<Document>;
+  updateDocument(id: string, userId: string, data: Partial<InsertDocument>): Promise<Document | undefined>;
+  deleteDocument(id: string, userId: string): Promise<boolean>;
+
+  getDocumentFields(documentId: string): Promise<DocumentField[]>;
+  createDocumentField(data: InsertDocumentField): Promise<DocumentField>;
+  updateDocumentField(id: string, data: Partial<InsertDocumentField>): Promise<DocumentField | undefined>;
+  deleteDocumentField(id: string): Promise<boolean>;
+  deleteDocumentFieldsByDocumentId(documentId: string): Promise<boolean>;
+
+  getDocumentSignatures(documentId: string): Promise<DocumentSignature[]>;
+  createDocumentSignature(data: InsertDocumentSignature): Promise<DocumentSignature>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -615,6 +635,73 @@ export class DatabaseStorage implements IStorage {
       .where(eq(subscriptions.stripeCustomerId, stripeCustomerId))
       .returning();
     return sub;
+  }
+
+  async getDocuments(userId: string) {
+    return db.select().from(documents).where(eq(documents.userId, userId)).orderBy(desc(documents.createdAt));
+  }
+
+  async getDocument(id: string, userId: string) {
+    const [doc] = await db.select().from(documents).where(and(eq(documents.id, id), eq(documents.userId, userId)));
+    return doc;
+  }
+
+  async getDocumentByShareToken(shareToken: string) {
+    const [doc] = await db.select().from(documents).where(eq(documents.shareToken, shareToken));
+    return doc;
+  }
+
+  async createDocument(data: InsertDocument) {
+    const [doc] = await db.insert(documents).values(data).returning();
+    return doc;
+  }
+
+  async updateDocument(id: string, userId: string, data: Partial<InsertDocument>) {
+    const [doc] = await db.update(documents)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(documents.id, id), eq(documents.userId, userId)))
+      .returning();
+    return doc;
+  }
+
+  async deleteDocument(id: string, userId: string) {
+    await db.delete(documentFields).where(eq(documentFields.documentId, id));
+    await db.delete(documentSignatures).where(eq(documentSignatures.documentId, id));
+    const result = await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getDocumentFields(documentId: string) {
+    return db.select().from(documentFields).where(eq(documentFields.documentId, documentId));
+  }
+
+  async createDocumentField(data: InsertDocumentField) {
+    const [field] = await db.insert(documentFields).values(data).returning();
+    return field;
+  }
+
+  async updateDocumentField(id: string, data: Partial<InsertDocumentField>) {
+    const [field] = await db.update(documentFields).set(data).where(eq(documentFields.id, id)).returning();
+    return field;
+  }
+
+  async deleteDocumentField(id: string) {
+    const result = await db.delete(documentFields).where(eq(documentFields.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteDocumentFieldsByDocumentId(documentId: string) {
+    await db.delete(documentFields).where(eq(documentFields.documentId, documentId));
+    return true;
+  }
+
+  async getDocumentSignatures(documentId: string) {
+    return db.select().from(documentSignatures).where(eq(documentSignatures.documentId, documentId));
+  }
+
+  async createDocumentSignature(data: InsertDocumentSignature) {
+    const [sig] = await db.insert(documentSignatures).values(data).returning();
+    return sig;
   }
 }
 

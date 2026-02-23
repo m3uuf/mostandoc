@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
+import { z } from "zod";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as FacebookStrategy } from "passport-facebook";
@@ -1101,6 +1102,220 @@ export async function registerRoutes(
 
   app.get("/api/config/stripe", (req, res) => {
     res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
+  });
+
+  // Document routes
+  app.get("/api/documents", isAuthenticated, async (req, res) => {
+    try {
+      const docs = await storage.getDocuments(getUserId(req));
+      res.json(docs);
+    } catch (error) {
+      console.error("Get documents error:", error);
+      res.status(500).json({ message: "فشل في تحميل المستندات" });
+    }
+  });
+
+  app.get("/api/documents/:id", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      const fields = await storage.getDocumentFields(doc.id);
+      const signatures = await storage.getDocumentSignatures(doc.id);
+      res.json({ ...doc, fields, signatures });
+    } catch (error) {
+      console.error("Get document error:", error);
+      res.status(500).json({ message: "فشل في تحميل المستند" });
+    }
+  });
+
+  app.post("/api/documents", isAuthenticated, async (req, res) => {
+    try {
+      const { title, fileUrl, fileType } = req.body;
+      if (!title || !fileUrl || !fileType) {
+        return res.status(400).json({ message: "جميع الحقول مطلوبة" });
+      }
+      const crypto = await import("crypto");
+      const shareToken = crypto.randomBytes(16).toString("hex");
+      const doc = await storage.createDocument({
+        userId: getUserId(req),
+        title,
+        fileUrl,
+        fileType,
+        status: "draft",
+        shareToken,
+      });
+      res.json(doc);
+    } catch (error) {
+      console.error("Create document error:", error);
+      res.status(500).json({ message: "فشل في إنشاء المستند" });
+    }
+  });
+
+  app.patch("/api/documents/:id", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.updateDocument(req.params.id, getUserId(req), req.body);
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      res.json(doc);
+    } catch (error) {
+      console.error("Update document error:", error);
+      res.status(500).json({ message: "فشل في تحديث المستند" });
+    }
+  });
+
+  app.delete("/api/documents/:id", isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.deleteDocument(req.params.id, getUserId(req));
+      if (!result) return res.status(404).json({ message: "المستند غير موجود" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete document error:", error);
+      res.status(500).json({ message: "فشل في حذف المستند" });
+    }
+  });
+
+  // Document fields
+  const fieldBodySchema = z.object({
+    type: z.enum(["text", "date", "signature"]),
+    label: z.string().max(200).optional(),
+    value: z.string().max(500000).optional(),
+    x: z.string(),
+    y: z.string(),
+    width: z.string(),
+    height: z.string(),
+    page: z.number().int().min(0).optional(),
+    required: z.boolean().optional(),
+  });
+
+  app.post("/api/documents/:id/fields", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      const parsed = fieldBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "بيانات الحقل غير صالحة" });
+      const field = await storage.createDocumentField({
+        documentId: doc.id,
+        ...parsed.data,
+      });
+      res.json(field);
+    } catch (error) {
+      console.error("Create field error:", error);
+      res.status(500).json({ message: "فشل في إنشاء الحقل" });
+    }
+  });
+
+  app.patch("/api/documents/:docId/fields/:fieldId", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(req.params.docId, getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      const existingFields = await storage.getDocumentFields(doc.id);
+      const fieldBelongs = existingFields.some((f) => f.id === req.params.fieldId);
+      if (!fieldBelongs) return res.status(403).json({ message: "هذا الحقل لا ينتمي للمستند" });
+      const updateParsed = fieldBodySchema.partial().safeParse(req.body);
+      if (!updateParsed.success) return res.status(400).json({ message: "بيانات الحقل غير صالحة" });
+      const field = await storage.updateDocumentField(req.params.fieldId, updateParsed.data);
+      if (!field) return res.status(404).json({ message: "الحقل غير موجود" });
+      res.json(field);
+    } catch (error) {
+      console.error("Update field error:", error);
+      res.status(500).json({ message: "فشل في تحديث الحقل" });
+    }
+  });
+
+  app.delete("/api/documents/:docId/fields/:fieldId", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(req.params.docId, getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      const existingFields = await storage.getDocumentFields(doc.id);
+      const fieldBelongs = existingFields.some((f) => f.id === req.params.fieldId);
+      if (!fieldBelongs) return res.status(403).json({ message: "هذا الحقل لا ينتمي للمستند" });
+      await storage.deleteDocumentField(req.params.fieldId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete field error:", error);
+      res.status(500).json({ message: "فشل في حذف الحقل" });
+    }
+  });
+
+  app.put("/api/documents/:id/fields", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      await storage.deleteDocumentFieldsByDocumentId(doc.id);
+      const fieldsArr = z.array(fieldBodySchema).safeParse(req.body.fields || []);
+      if (!fieldsArr.success) return res.status(400).json({ message: "بيانات الحقول غير صالحة" });
+      const created = [];
+      for (const f of fieldsArr.data) {
+        const field = await storage.createDocumentField({ documentId: doc.id, ...f });
+        created.push(field);
+      }
+      res.json(created);
+    } catch (error) {
+      console.error("Save fields error:", error);
+      res.status(500).json({ message: "فشل في حفظ الحقول" });
+    }
+  });
+
+  // Public document signing
+  app.get("/api/documents/sign/:shareToken", async (req, res) => {
+    try {
+      const doc = await storage.getDocumentByShareToken(req.params.shareToken);
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      if (doc.status !== "sent" && doc.status !== "draft") {
+        return res.status(400).json({ message: "المستند غير متاح للتوقيع" });
+      }
+      const fields = await storage.getDocumentFields(doc.id);
+      const signatures = await storage.getDocumentSignatures(doc.id);
+      res.json({ ...doc, fields, signatures });
+    } catch (error) {
+      console.error("Get shared document error:", error);
+      res.status(500).json({ message: "فشل في تحميل المستند" });
+    }
+  });
+
+  const signBodySchema = z.object({
+    signerName: z.string().min(1).max(200),
+    signerEmail: z.string().email().max(254).optional().or(z.literal("")),
+    signatureData: z.string().min(1).max(2000000),
+    fieldValues: z.record(z.string()).optional(),
+  });
+
+  app.post("/api/documents/sign/:shareToken", async (req, res) => {
+    try {
+      const doc = await storage.getDocumentByShareToken(req.params.shareToken);
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      if (doc.status === "signed") {
+        return res.status(400).json({ message: "المستند موقّع بالفعل" });
+      }
+      const parsed = signBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "الاسم والتوقيع مطلوبان" });
+      }
+      const { signerName, signerEmail, signatureData, fieldValues } = parsed.data;
+      const ip = req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || "";
+      if (fieldValues) {
+        const docFields = await storage.getDocumentFields(doc.id);
+        for (const field of docFields) {
+          if (fieldValues[field.id]) {
+            await storage.updateDocumentField(field.id, { value: fieldValues[field.id] });
+          }
+        }
+      }
+      await storage.createDocumentSignature({
+        documentId: doc.id,
+        signerName,
+        signerEmail: signerEmail || null,
+        signatureData,
+        ipAddress: ip,
+      });
+      await storage.updateDocument(doc.id, doc.userId, {
+        status: "signed",
+        signedAt: new Date(),
+      } as any);
+      res.json({ success: true, message: "تم التوقيع بنجاح" });
+    } catch (error) {
+      console.error("Sign document error:", error);
+      res.status(500).json({ message: "فشل في توقيع المستند" });
+    }
   });
 
   return httpServer;

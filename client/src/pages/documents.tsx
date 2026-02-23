@@ -1,0 +1,214 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Plus, FileText, MoreVertical, Trash2, Edit, Share2, Copy, ExternalLink, Loader2, Upload
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Document } from "@shared/schema";
+
+const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  draft: { label: "مسودة", variant: "secondary" },
+  sent: { label: "مرسل للتوقيع", variant: "default" },
+  signed: { label: "موقّع", variant: "outline" },
+};
+
+export default function DocumentsPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: documents, isLoading } = useQuery<Document[]>({
+    queryKey: ["/api/documents"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/documents/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      toast({ title: "تم الحذف", description: "تم حذف المستند بنجاح" });
+    },
+  });
+
+  const handleCreate = async () => {
+    if (!title.trim() || !file) return;
+    setUploading(true);
+    try {
+      const urlRes = await apiRequest("POST", "/api/uploads/request-url", {
+        filename: file.name,
+        contentType: file.type,
+      });
+      const { uploadUrl, objectPath } = await urlRes.json();
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      const fileUrl = `/objects/${objectPath}`;
+      const fileType = file.type.includes("pdf") ? "pdf" : "image";
+      await apiRequest("POST", "/api/documents", { title: title.trim(), fileUrl, fileType });
+      queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      setCreateOpen(false);
+      setTitle("");
+      setFile(null);
+      toast({ title: "تم الإنشاء", description: "تم إنشاء المستند بنجاح" });
+    } catch (error) {
+      toast({ title: "خطأ", description: "فشل في رفع الملف", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const copyShareLink = (shareToken: string) => {
+    const link = `${window.location.origin}/sign/${shareToken}`;
+    navigator.clipboard.writeText(link);
+    toast({ title: "تم النسخ", description: "تم نسخ رابط التوقيع" });
+  };
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold" data-testid="text-page-title">المستندات</h1>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-create-document">
+              <Plus className="ml-2 h-4 w-4" />
+              مستند جديد
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>إنشاء مستند جديد</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label>عنوان المستند</Label>
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="مثال: عقد خدمات تصميم"
+                  data-testid="input-document-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>رفع الملف (PDF أو صورة)</Label>
+                <div className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors"
+                  onClick={() => document.getElementById("file-upload")?.click()}
+                  data-testid="dropzone-file-upload"
+                >
+                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  {file ? (
+                    <p className="text-sm font-medium">{file.name}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">اضغط لاختيار ملف أو اسحبه هنا</p>
+                  )}
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+              </div>
+              <Button
+                className="w-full"
+                onClick={handleCreate}
+                disabled={!title.trim() || !file || uploading}
+                data-testid="button-submit-document"
+              >
+                {uploading && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                إنشاء المستند
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+        </div>
+      ) : !documents?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">لا توجد مستندات</h3>
+            <p className="text-sm text-muted-foreground mb-4">ابدأ بإنشاء مستند جديد لإرساله للتوقيع</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {documents.map((doc) => {
+            const status = STATUS_MAP[doc.status || "draft"];
+            return (
+              <Card key={doc.id} className="hover:shadow-md transition-shadow cursor-pointer" data-testid={`card-document-${doc.id}`}>
+                <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+                  <div className="flex-1 min-w-0" onClick={() => navigate(`/dashboard/documents/${doc.id}`)}>
+                    <CardTitle className="text-base truncate">{doc.title}</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(doc.createdAt!).toLocaleDateString("ar-SA")}
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" data-testid={`button-menu-${doc.id}`}>
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => navigate(`/dashboard/documents/${doc.id}`)}>
+                        <Edit className="ml-2 h-4 w-4" />
+                        تعديل
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => copyShareLink(doc.shareToken!)}>
+                        <Copy className="ml-2 h-4 w-4" />
+                        نسخ رابط التوقيع
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => window.open(`/sign/${doc.shareToken}`, "_blank")}>
+                        <ExternalLink className="ml-2 h-4 w-4" />
+                        فتح صفحة التوقيع
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => deleteMutation.mutate(doc.id)}
+                      >
+                        <Trash2 className="ml-2 h-4 w-4" />
+                        حذف
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </CardHeader>
+                <CardContent onClick={() => navigate(`/dashboard/documents/${doc.id}`)}>
+                  <div className="flex items-center justify-between">
+                    <Badge variant={status?.variant || "secondary"}>{status?.label || doc.status}</Badge>
+                    {doc.recipientName && (
+                      <span className="text-xs text-muted-foreground">{doc.recipientName}</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -184,6 +184,46 @@ export const subscriptions = pgTable("subscriptions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [index("idx_subscriptions_user_id").on(table.userId), index("idx_subscriptions_stripe_customer_id").on(table.stripeCustomerId)]);
 
+export const documents = pgTable("documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  title: text("title").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type").notNull(),
+  status: text("status").default("draft"),
+  shareToken: varchar("share_token").unique(),
+  recipientName: text("recipient_name"),
+  recipientEmail: text("recipient_email"),
+  signedAt: timestamp("signed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [index("idx_documents_user_id").on(table.userId), index("idx_documents_share_token").on(table.shareToken)]);
+
+export const documentFields = pgTable("document_fields", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").notNull(),
+  type: text("type").notNull(),
+  label: text("label"),
+  value: text("value"),
+  x: decimal("x", { precision: 10, scale: 2 }).notNull(),
+  y: decimal("y", { precision: 10, scale: 2 }).notNull(),
+  width: decimal("width", { precision: 10, scale: 2 }).default("200"),
+  height: decimal("height", { precision: 10, scale: 2 }).default("40"),
+  page: integer("page").default(0),
+  required: boolean("required").default(true),
+  sortOrder: integer("sort_order").default(0),
+});
+
+export const documentSignatures = pgTable("document_signatures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").notNull(),
+  signerName: text("signer_name").notNull(),
+  signerEmail: text("signer_email"),
+  signatureData: text("signature_data").notNull(),
+  ipAddress: text("ip_address"),
+  signedAt: timestamp("signed_at").defaultNow(),
+});
+
 export const insertProfileSchema = createInsertSchema(profiles).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
@@ -195,6 +235,9 @@ export const insertServiceSchema = createInsertSchema(services).omit({ id: true,
 export const insertPortfolioItemSchema = createInsertSchema(portfolioItems).omit({ id: true, createdAt: true });
 export const insertContactMessageSchema = createInsertSchema(contactMessages).omit({ id: true, createdAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertDocumentFieldSchema = createInsertSchema(documentFields).omit({ id: true });
+export const insertDocumentSignatureSchema = createInsertSchema(documentSignatures).omit({ id: true, signedAt: true });
 
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
@@ -219,3 +262,9 @@ export type ContactMessage = typeof contactMessages.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type Document = typeof documents.$inferSelect;
+export type InsertDocumentField = z.infer<typeof insertDocumentFieldSchema>;
+export type DocumentField = typeof documentFields.$inferSelect;
+export type InsertDocumentSignature = z.infer<typeof insertDocumentSignatureSchema>;
+export type DocumentSignature = typeof documentSignatures.$inferSelect;

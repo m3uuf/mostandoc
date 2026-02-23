@@ -111,7 +111,19 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Social login buttons are conditionally enabled based on available credentials (GET /api/auth/providers)
 - OAuth callbacks: /api/auth/google/callback, /api/auth/facebook/callback
 
+## Document Editor (DocuSign-like)
+- Upload PDF/image files, add drag-and-drop fields (text, date, signature)
+- Share documents via public links for signing without account
+- Field types: text, date, signature (using react-signature-canvas)
+- Document status workflow: draft → sent → signed
+- Public signing page collects signer name, email, signature, and field values
+- API: /api/documents (CRUD), /api/documents/:id/fields, /api/documents/sign/:shareToken
+- Tables: documents, document_fields, document_signatures
+- Pages: /dashboard/documents (list), /dashboard/documents/:id (editor), /sign/:token (public)
+- Sidebar nav: المستندات (FilePenLine icon)
+
 ## Recent Changes
+- 2026-02-23: Added document editor with drag-drop fields, signature pad, public signing links
 - 2026-02-21: Added email verification on registration with dashboard banner and resend option
 - 2026-02-20: Added forgot password flow (Resend email), phone field, social login buttons (Google/Facebook/Apple)
 - 2026-02-20: Replaced Replit Auth with custom email/password auth (bcryptjs, session-based, /auth page)

@@ -22,6 +22,9 @@ import MyPageManager from "@/pages/my-page";
 import SettingsPage from "@/pages/settings";
 import NotificationsPage from "@/pages/notifications";
 import PublicProfile from "@/pages/public-profile";
+import DocumentsPage from "@/pages/documents";
+import DocumentEditor from "@/pages/document-editor";
+import SignDocument from "@/pages/sign-document";
 import { Loader2 } from "lucide-react";
 
 function AuthenticatedLayout() {
@@ -49,6 +52,8 @@ function AuthenticatedLayout() {
               <Route path="/dashboard/my-page" component={MyPageManager} />
               <Route path="/dashboard/settings" component={SettingsPage} />
               <Route path="/dashboard/notifications" component={NotificationsPage} />
+              <Route path="/dashboard/documents/(.*)" component={DocumentEditor} />
+              <Route path="/dashboard/documents" component={DocumentsPage} />
               <Route component={NotFound} />
             </Switch>
           </main>
@@ -73,11 +78,12 @@ function Router() {
     return (
       <Switch>
         <Route path="/p/:username" component={PublicProfile} />
+        <Route path="/sign/:token" component={SignDocument} />
         <Route path="/auth/reset-password" component={ResetPasswordPage} />
         <Route path="/auth/verify-email" component={VerifyEmailPage} />
         <Route path="/"><Redirect to="/dashboard" /></Route>
         <Route path="/auth"><Redirect to="/dashboard" /></Route>
-        <Route path="/dashboard/:rest*" component={AuthenticatedLayout} />
+        <Route path="/dashboard/(.*)" component={AuthenticatedLayout} />
         <Route path="/dashboard" component={AuthenticatedLayout} />
         <Route component={NotFound} />
       </Switch>
@@ -87,11 +93,12 @@ function Router() {
   return (
     <Switch>
       <Route path="/p/:username" component={PublicProfile} />
+      <Route path="/sign/:token" component={SignDocument} />
       <Route path="/auth/reset-password" component={ResetPasswordPage} />
       <Route path="/auth/verify-email" component={VerifyEmailPage} />
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
-      <Route path="/dashboard/:rest*"><Redirect to="/auth" /></Route>
+      <Route path="/dashboard/(.*)"><Redirect to="/auth" /></Route>
       <Route path="/dashboard"><Redirect to="/auth" /></Route>
       <Route component={NotFound} />
     </Switch>
