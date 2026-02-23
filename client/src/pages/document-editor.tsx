@@ -43,53 +43,26 @@ const FIELD_TYPES = [
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-
-    const renderPdf = async () => {
+    const loadPreview = async () => {
       try {
-        const response = await fetch(fileUrl);
-        if (!response.ok) throw new Error("Failed to fetch PDF");
-        const arrayBuffer = await response.arrayBuffer();
-
-        const pdfjsLib = await import("pdfjs-dist/build/pdf.min.mjs");
-        const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs");
-        pdfjsLib.GlobalWorkerOptions.workerPort = new workerModule.default();
-
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1);
-
-        const containerWidth = containerRef.current?.clientWidth || 800;
-        const unscaledViewport = page.getViewport({ scale: 1 });
-        const scale = containerWidth / unscaledViewport.width;
-        const viewport = page.getViewport({ scale });
-
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        await page.render({ canvasContext: ctx, viewport } as any).promise;
+        const res = await fetch(`/api/pdf-preview?url=${encodeURIComponent(fileUrl)}`);
+        if (!res.ok) throw new Error("Failed to render PDF");
+        const blob = await res.blob();
         if (!cancelled) {
-          setLoading(false);
+          setImgSrc(URL.createObjectURL(blob));
           onLoad?.();
         }
-      } catch (err) {
-        console.error("PDF render error:", err);
-        if (!cancelled) {
-          setError(true);
-          setLoading(false);
-        }
+      } catch (err: any) {
+        console.error("PDF render error:", err?.message || err);
+        if (!cancelled) setError(true);
       }
     };
-    renderPdf();
+    loadPreview();
     return () => { cancelled = true; };
   }, [fileUrl, onLoad]);
 
@@ -101,16 +74,15 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
     );
   }
 
-  return (
-    <div className="w-full" ref={containerRef}>
-      {loading && (
-        <div className="w-full min-h-[600px] flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      )}
-      <canvas ref={canvasRef} className="w-full h-auto" style={{ display: loading ? "none" : "block" }} />
-    </div>
-  );
+  if (!imgSrc) {
+    return (
+      <div className="w-full min-h-[600px] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return <img src={imgSrc} alt="PDF" className="w-full h-auto" draggable={false} />;
 }
 
 export default function DocumentEditor() {

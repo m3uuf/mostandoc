@@ -1104,6 +1104,55 @@ export async function registerRoutes(
     res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
   });
 
+  app.get("/api/pdf-preview", async (req, res) => {
+    try {
+      const fileUrl = req.query.url as string;
+      if (!fileUrl) return res.status(400).json({ message: "Missing url parameter" });
+
+      const { default: fetch } = await import("node-fetch");
+      const fullUrl = fileUrl.startsWith("http") ? fileUrl : `http://localhost:5000${fileUrl}`;
+      const pdfRes = await fetch(fullUrl);
+      if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
+      const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+
+      const { execSync } = await import("child_process");
+      const fs = await import("fs");
+      const os = await import("os");
+      const path = await import("path");
+      const tmpDir = os.tmpdir();
+      const tmpPdf = path.join(tmpDir, `pdf-${Date.now()}.pdf`);
+      fs.writeFileSync(tmpPdf, pdfBuffer);
+
+      const outPrefix = path.join(tmpDir, `pdf-img-${Date.now()}`);
+      execSync(`pdftoppm -png -f 1 -l 1 -r 150 "${tmpPdf}" "${outPrefix}"`, { timeout: 10000 });
+
+      const outFile = `${outPrefix}-1.png`;
+      if (!fs.existsSync(outFile)) {
+        const altFile = `${outPrefix}-01.png`;
+        if (!fs.existsSync(altFile)) {
+          fs.unlinkSync(tmpPdf);
+          return res.status(500).json({ message: "PDF conversion failed" });
+        }
+        const imgData = fs.readFileSync(altFile);
+        fs.unlinkSync(tmpPdf);
+        fs.unlinkSync(altFile);
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Cache-Control", "public, max-age=3600");
+        return res.send(imgData);
+      }
+
+      const imgData = fs.readFileSync(outFile);
+      fs.unlinkSync(tmpPdf);
+      fs.unlinkSync(outFile);
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(imgData);
+    } catch (error) {
+      console.error("PDF preview error:", error);
+      res.status(500).json({ message: "Failed to generate PDF preview" });
+    }
+  });
+
   // Document routes
   app.get("/api/documents", isAuthenticated, async (req, res) => {
     try {
