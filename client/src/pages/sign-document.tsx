@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import SignatureCanvas from "react-signature-canvas";
@@ -14,6 +14,47 @@ import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import type { Document, DocumentField } from "@shared/schema";
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
+
+function PdfRenderer({ fileUrl }: { fileUrl: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const renderPdf = async () => {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        await page.render({ canvasContext: ctx, viewport } as any).promise;
+        if (!cancelled) setLoading(false);
+      } catch (err) {
+        console.error("PDF render error:", err);
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    renderPdf();
+    return () => { cancelled = true; };
+  }, [fileUrl]);
+
+  if (error) return <div className="w-full min-h-[400px] flex items-center justify-center"><p className="text-muted-foreground">تعذر عرض ملف PDF</p></div>;
+
+  return (
+    <div className="w-full">
+      {loading && <div className="w-full min-h-[400px] flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}
+      <canvas ref={canvasRef} className="w-full h-auto" style={{ display: loading ? "none" : "block" }} />
+    </div>
+  );
+}
 
 export default function SignDocument() {
   const params = useParams<{ token: string }>();
@@ -132,7 +173,7 @@ export default function SignDocument() {
               {doc.fileType === "image" ? (
                 <img src={doc.fileUrl} alt={doc.title} className="w-full h-auto" />
               ) : (
-                <iframe src={doc.fileUrl} className="w-full border-0" style={{ minHeight: 600 }} title={doc.title} />
+                <PdfRenderer fileUrl={doc.fileUrl} />
               )}
 
               {/* Show fields on document */}

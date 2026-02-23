@@ -62,7 +62,7 @@ export default function DocumentsPage() {
         body: file,
         headers: { "Content-Type": file.type },
       });
-      const fileUrl = `/objects/${objectPath}`;
+      const fileUrl = objectPath;
       const fileType = file.type.includes("pdf") ? "pdf" : "image";
       await apiRequest("POST", "/api/documents", { title: title.trim(), fileUrl, fileType });
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });

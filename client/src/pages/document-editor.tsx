@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import SignatureCanvas from "react-signature-canvas";
@@ -41,6 +41,66 @@ const FIELD_TYPES = [
 ];
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
+
+function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const renderPdf = async () => {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.5 });
+
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        await page.render({ canvasContext: ctx, viewport } as any).promise;
+        if (!cancelled) {
+          setLoading(false);
+          onLoad?.();
+        }
+      } catch (err) {
+        console.error("PDF render error:", err);
+        if (!cancelled) {
+          setError(true);
+          setLoading(false);
+        }
+      }
+    };
+    renderPdf();
+    return () => { cancelled = true; };
+  }, [fileUrl, onLoad]);
+
+  if (error) {
+    return (
+      <div className="w-full min-h-[600px] flex items-center justify-center bg-white dark:bg-gray-900">
+        <p className="text-muted-foreground">تعذر عرض ملف PDF</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full">
+      {loading && (
+        <div className="w-full min-h-[600px] flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      <canvas ref={canvasRef} className="w-full h-auto" style={{ display: loading ? "none" : "block" }} />
+    </div>
+  );
+}
 
 export default function DocumentEditor() {
   const [location, navigate] = useLocation();
@@ -421,16 +481,7 @@ export default function DocumentEditor() {
                 draggable={false}
               />
             ) : (
-              <div className="w-full min-h-[800px] flex items-center justify-center bg-white dark:bg-gray-900">
-                <div className="text-center text-muted-foreground p-8">
-                  <iframe
-                    src={doc.fileUrl}
-                    className="w-full border-0"
-                    style={{ minHeight: 800 }}
-                    title={doc.title}
-                  />
-                </div>
-              </div>
+              <PdfRenderer fileUrl={doc.fileUrl} onLoad={() => setImageLoaded(true)} />
             )}
 
             {/* Draggable fields */}
