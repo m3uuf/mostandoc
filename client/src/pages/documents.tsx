@@ -52,11 +52,12 @@ export default function DocumentsPage() {
     setUploading(true);
     try {
       const urlRes = await apiRequest("POST", "/api/uploads/request-url", {
-        filename: file.name,
+        name: file.name,
+        size: file.size,
         contentType: file.type,
       });
-      const { uploadUrl, objectPath } = await urlRes.json();
-      await fetch(uploadUrl, {
+      const { uploadURL, objectPath } = await urlRes.json();
+      await fetch(uploadURL, {
         method: "PUT",
         body: file,
         headers: { "Content-Type": file.type },
