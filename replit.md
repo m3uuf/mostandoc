@@ -137,6 +137,7 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Live progress with polling (1.5s interval), log viewer, error reporting
 
 ## Recent Changes
+- 2026-03-12: Added superadmin system — role/isSuspended columns, isAdmin middleware, admin dashboard (/dashboard/admin), user management with suspend/promote/delete
 - 2026-03-12: Added Bubble.io data migration tool (/dashboard/admin/migrate) — 395 users, 109 clients, 517 contracts, 6 profiles
 - 2026-02-23: Added email notification on document send, client linking for documents
 - 2026-02-23: Added document editor with drag-drop fields, signature pad, public signing links

@@ -12,3 +12,8 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
+
+export async function dbQuery(queryStr: string, params?: any[]): Promise<any[]> {
+  const result = await pool.query(queryStr, params);
+  return result.rows;
+}
