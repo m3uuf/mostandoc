@@ -8,6 +8,8 @@ interface AuthUser {
   lastName: string | null;
   profileImageUrl: string | null;
   emailVerified: boolean | null;
+  role: string | null;
+  isSuspended: boolean | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 }

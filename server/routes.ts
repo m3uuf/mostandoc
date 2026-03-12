@@ -2,8 +2,11 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
+import { sql, eq } from "drizzle-orm";
+import { db } from "./db";
+import { users } from "@shared/models/auth";
 import { storage } from "./storage";
-import { setupCustomAuth, isAuthenticated, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
+import { setupCustomAuth, isAuthenticated, isAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
 import { z } from "zod";
@@ -1410,6 +1413,106 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Sign document error:", error);
       res.status(500).json({ message: "فشل في توقيع المستند" });
+    }
+  });
+
+  // ─── Super Admin Routes ───────────────────────────────────────────────────
+  app.get("/api/admin/stats", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const [usersCount] = await db.execute(sql`SELECT COUNT(*) as c FROM users WHERE role != 'superadmin'`);
+      const [activeUsers] = await db.execute(sql`SELECT COUNT(*) as c FROM users WHERE is_suspended = false AND role != 'superadmin'`);
+      const [suspendedUsers] = await db.execute(sql`SELECT COUNT(*) as c FROM users WHERE is_suspended = true`);
+      const [clientsCount] = await db.execute(sql`SELECT COUNT(*) as c FROM clients`);
+      const [contractsCount] = await db.execute(sql`SELECT COUNT(*) as c FROM contracts`);
+      const [invoicesCount] = await db.execute(sql`SELECT COUNT(*) as c FROM invoices`);
+      const [projectsCount] = await db.execute(sql`SELECT COUNT(*) as c FROM projects`);
+      const [profilesCount] = await db.execute(sql`SELECT COUNT(*) as c FROM profiles`);
+      const [newUsersToday] = await db.execute(sql`SELECT COUNT(*) as c FROM users WHERE created_at >= CURRENT_DATE`);
+      const [newUsersWeek] = await db.execute(sql`SELECT COUNT(*) as c FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'`);
+      res.json({
+        users: Number(usersCount.c),
+        activeUsers: Number(activeUsers.c),
+        suspendedUsers: Number(suspendedUsers.c),
+        clients: Number(clientsCount.c),
+        contracts: Number(contractsCount.c),
+        invoices: Number(invoicesCount.c),
+        projects: Number(projectsCount.c),
+        profiles: Number(profilesCount.c),
+        newUsersToday: Number(newUsersToday.c),
+        newUsersWeek: Number(newUsersWeek.c),
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/admin/users", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+      const search = (req.query.search as string || "").trim();
+      const offset = (page - 1) * limit;
+
+      let whereClause = search
+        ? sql`WHERE (u.email ILIKE ${'%' + search + '%'} OR u.first_name ILIKE ${'%' + search + '%'} OR u.last_name ILIKE ${'%' + search + '%'}) AND u.role != 'superadmin'`
+        : sql`WHERE u.role != 'superadmin'`;
+
+      const rows = await db.execute(sql`
+        SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.role, u.is_suspended,
+               u.auth_provider, u.email_verified, u.created_at,
+               COUNT(DISTINCT c.id) as clients_count,
+               COUNT(DISTINCT co.id) as contracts_count
+        FROM users u
+        LEFT JOIN clients c ON c.user_id = u.id
+        LEFT JOIN contracts co ON co.user_id = u.id
+        ${whereClause}
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const [totalRow] = await db.execute(sql`
+        SELECT COUNT(*) as total FROM users u ${whereClause}
+      `);
+
+      res.json({
+        data: rows,
+        total: Number(totalRow.total),
+        page,
+        limit,
+        totalPages: Math.ceil(Number(totalRow.total) / limit),
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { role, isSuspended } = req.body;
+      const fields: Record<string, any> = { updatedAt: new Date() };
+      if (role !== undefined) fields.role = role;
+      if (isSuspended !== undefined) fields.isSuspended = isSuspended;
+      const [updated] = await db.update(users).set(fields).where(eq(users.id, id)).returning();
+      if (!updated) return res.status(404).json({ message: "المستخدم غير موجود" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const adminId = getUserId(req);
+      if (id === adminId) return res.status(400).json({ message: "لا يمكن حذف حسابك الخاص" });
+      const target = await getUserById(id);
+      if (target?.role === "superadmin") return res.status(403).json({ message: "لا يمكن حذف السوبر أدمن" });
+      await db.delete(users).where(eq(users.id, id));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
     }
   });
 

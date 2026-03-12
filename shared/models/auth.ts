@@ -26,6 +26,8 @@ export const users = pgTable("users", {
   appleId: varchar("apple_id").unique(),
   authProvider: varchar("auth_provider").default("email"),
   emailVerified: boolean("email_verified").default(false),
+  role: varchar("role").default("user"),
+  isSuspended: boolean("is_suspended").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

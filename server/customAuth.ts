@@ -47,6 +47,17 @@ export const isAuthenticated: RequestHandler = (req, res, next) => {
   return res.status(401).json({ message: "غير مصرح" });
 };
 
+export const isAdmin: RequestHandler = async (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "غير مصرح" });
+  }
+  const user = await getUserById(req.session.userId);
+  if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
+    return res.status(403).json({ message: "صلاحيات غير كافية" });
+  }
+  return next();
+};
+
 export function getUserId(req: Request): string {
   return req.session.userId!;
 }

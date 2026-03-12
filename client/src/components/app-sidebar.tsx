@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown, FilePenLine
+  LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown, FilePenLine, ShieldCheck
 } from "lucide-react";
 import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import {
@@ -81,6 +81,16 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {(user?.role === "admin" || user?.role === "superadmin") && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location.startsWith("/dashboard/admin")} tooltip="لوحة الأدمن">
+                    <Link href="/dashboard/admin" data-testid="link-admin">
+                      <ShieldCheck className="shrink-0 text-purple-500" />
+                      <span className="text-purple-600 dark:text-purple-400 font-medium">لوحة الأدمن</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
