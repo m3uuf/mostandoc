@@ -137,6 +137,7 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Live progress with polling (1.5s interval), log viewer, error reporting
 
 ## Recent Changes
+- 2026-03-12: Added rich text document editor (TipTap) — create/edit text documents with formatting toolbar (bold, italic, underline, headings, lists, alignment, highlight, links), auto-save with debounce, paper-like layout; document list shows both text and file doc types
 - 2026-03-12: Added user role & subscription editor in admin dashboard — edit dialog with role selector (user/admin) and plan selector (free/starter/pro/business) with status control, subscription data shown in users table
 - 2026-03-12: Added superadmin system — role/isSuspended columns, isAdmin middleware, admin dashboard (/dashboard/admin), user management with suspend/promote/delete
 - 2026-03-12: Added Bubble.io data migration tool (/dashboard/admin/migrate) — 395 users, 109 clients, 517 contracts, 6 profiles

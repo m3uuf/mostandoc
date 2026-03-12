@@ -1182,8 +1182,9 @@ export async function registerRoutes(
 
   app.post("/api/documents", isAuthenticated, async (req, res) => {
     try {
-      const { title, fileUrl, fileType } = req.body;
-      if (!title || !fileUrl || !fileType) {
+      const { title, fileUrl, fileType, docType, content } = req.body;
+      if (!title) return res.status(400).json({ message: "العنوان مطلوب" });
+      if (docType !== "text" && (!fileUrl || !fileType)) {
         return res.status(400).json({ message: "جميع الحقول مطلوبة" });
       }
       const crypto = await import("crypto");
@@ -1191,8 +1192,10 @@ export async function registerRoutes(
       const doc = await storage.createDocument({
         userId: getUserId(req),
         title,
-        fileUrl,
-        fileType,
+        fileUrl: fileUrl || null,
+        fileType: fileType || null,
+        docType: docType || "file",
+        content: content || null,
         status: "draft",
         shareToken,
       });
