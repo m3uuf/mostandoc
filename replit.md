@@ -126,7 +126,18 @@ profiles, clients, contracts, invoices, invoice_items, projects, project_tasks, 
 - Pages: /dashboard/documents (list), /dashboard/documents/:id (editor), /sign/:token (public)
 - Sidebar nav: المستندات (FilePenLine icon)
 
+## Data Migration Tool (Bubble.io → Mustanadak)
+- Migration admin page: /dashboard/admin/migrate (hidden from sidebar)
+- Server module: server/migration.ts handles all migration logic
+- 4 phases: Users (395) → Clients (109) → Contracts (517) → Company Profiles (6)
+- Each new user gets a password reset email via Resend (7-day expiry link)
+- Source data: attached_assets/*.json (Bubble.io export files)
+- Bubble ID maps stored in memory for cross-referencing during migration
+- API endpoints: GET /api/admin/migrate/preview, /state | POST /api/admin/migrate/users, /clients, /contracts, /profiles, /reset
+- Live progress with polling (1.5s interval), log viewer, error reporting
+
 ## Recent Changes
+- 2026-03-12: Added Bubble.io data migration tool (/dashboard/admin/migrate) — 395 users, 109 clients, 517 contracts, 6 profiles
 - 2026-02-23: Added email notification on document send, client linking for documents
 - 2026-02-23: Added document editor with drag-drop fields, signature pad, public signing links
 - 2026-02-21: Added email verification on registration with dashboard banner and resend option

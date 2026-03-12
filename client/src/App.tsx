@@ -25,6 +25,7 @@ import PublicProfile from "@/pages/public-profile";
 import DocumentsPage from "@/pages/documents";
 import DocumentEditor from "@/pages/document-editor";
 import SignDocument from "@/pages/sign-document";
+import AdminMigratePage from "@/pages/admin-migrate";
 import { Loader2 } from "lucide-react";
 
 function AuthenticatedLayout() {
@@ -54,6 +55,7 @@ function AuthenticatedLayout() {
               <Route path="/dashboard/notifications" component={NotificationsPage} />
               <Route path="/dashboard/documents/(.*)" component={DocumentEditor} />
               <Route path="/dashboard/documents" component={DocumentsPage} />
+              <Route path="/dashboard/admin/migrate" component={AdminMigratePage} />
               <Route component={NotFound} />
             </Switch>
           </main>

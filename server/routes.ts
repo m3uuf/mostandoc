@@ -1413,5 +1413,75 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Migration Admin Routes ───────────────────────────────────────────────
+  app.get("/api/admin/migrate/preview", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { getDataPreview } = await import("./migration");
+      const preview = getDataPreview();
+      res.json(preview);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "فشل في جلب المعاينة" });
+    }
+  });
+
+  app.get("/api/admin/migrate/state", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { getMigrationState } = await import("./migration");
+      res.json(getMigrationState());
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/migrate/users", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { migrateUsers } = await import("./migration");
+      res.json({ message: "بدأ نقل المستخدمين..." });
+      migrateUsers().catch(console.error);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/migrate/clients", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { migrateClients } = await import("./migration");
+      res.json({ message: "بدأ نقل العملاء..." });
+      migrateClients().catch(console.error);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/migrate/contracts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { migrateContracts } = await import("./migration");
+      res.json({ message: "بدأ نقل العقود..." });
+      migrateContracts().catch(console.error);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/migrate/profiles", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { migrateProfiles } = await import("./migration");
+      res.json({ message: "بدأ نقل الملفات..." });
+      migrateProfiles().catch(console.error);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/migrate/reset", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { resetMigrationState } = await import("./migration");
+      resetMigrationState();
+      res.json({ message: "تم إعادة التعيين" });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
   return httpServer;
 }
