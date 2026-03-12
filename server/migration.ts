@@ -149,8 +149,7 @@ export async function migrateUsers(): Promise<void> {
 
       state.userIdMap[bu._id] = newUser.id;
 
-      const resetToken = await generateMigrationResetToken(newUser.id);
-      await sendPasswordResetEmail(email, resetToken, firstName);
+      // emails will be sent separately after migration
 
       state.processed++;
       if (state.processed % 10 === 0) {
