@@ -1458,23 +1458,27 @@ export async function registerRoutes(
           ? `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.role, u.is_suspended,
                u.auth_provider, u.email_verified, u.created_at,
                COUNT(DISTINCT c.id) as clients_count,
-               COUNT(DISTINCT co.id) as contracts_count
+               COUNT(DISTINCT co.id) as contracts_count,
+               s.plan as sub_plan, s.status as sub_status, s.current_period_end as sub_end
              FROM users u
              LEFT JOIN clients c ON c.user_id = u.id
              LEFT JOIN contracts co ON co.user_id = u.id
+             LEFT JOIN subscriptions s ON s.user_id = u.id
              WHERE (u.email ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1) AND u.role != 'superadmin'
-             GROUP BY u.id
+             GROUP BY u.id, s.plan, s.status, s.current_period_end
              ORDER BY u.created_at DESC
              LIMIT $2 OFFSET $3`
           : `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.role, u.is_suspended,
                u.auth_provider, u.email_verified, u.created_at,
                COUNT(DISTINCT c.id) as clients_count,
-               COUNT(DISTINCT co.id) as contracts_count
+               COUNT(DISTINCT co.id) as contracts_count,
+               s.plan as sub_plan, s.status as sub_status, s.current_period_end as sub_end
              FROM users u
              LEFT JOIN clients c ON c.user_id = u.id
              LEFT JOIN contracts co ON co.user_id = u.id
+             LEFT JOIN subscriptions s ON s.user_id = u.id
              WHERE u.role != 'superadmin'
-             GROUP BY u.id
+             GROUP BY u.id, s.plan, s.status, s.current_period_end
              ORDER BY u.created_at DESC
              LIMIT $1 OFFSET $2`,
         search ? [`%${search}%`, limit, offset] : [limit, offset]
@@ -1502,13 +1506,39 @@ export async function registerRoutes(
   app.patch("/api/admin/users/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { role, isSuspended } = req.body;
-      const fields: Record<string, any> = { updatedAt: new Date() };
-      if (role !== undefined) fields.role = role;
-      if (isSuspended !== undefined) fields.isSuspended = isSuspended;
-      const [updated] = await db.update(users).set(fields).where(eq(users.id, id)).returning();
-      if (!updated) return res.status(404).json({ message: "المستخدم غير موجود" });
-      res.json(updated);
+      const { role, isSuspended, subscription } = req.body;
+
+      // Update user fields
+      if (role !== undefined || isSuspended !== undefined) {
+        const fields: Record<string, any> = { updatedAt: new Date() };
+        if (role !== undefined) fields.role = role;
+        if (isSuspended !== undefined) fields.isSuspended = isSuspended;
+        const [updated] = await db.update(users).set(fields).where(eq(users.id, id)).returning();
+        if (!updated) return res.status(404).json({ message: "المستخدم غير موجود" });
+      }
+
+      // Update or create subscription
+      if (subscription !== undefined) {
+        const existing = await dbQuery(`SELECT id FROM subscriptions WHERE user_id = $1`, [id]);
+        const now = new Date();
+        const periodEnd = subscription.plan && subscription.plan !== "free"
+          ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+          : null;
+        if (existing.length > 0) {
+          await dbQuery(
+            `UPDATE subscriptions SET plan=$1, status=$2, current_period_start=$3, current_period_end=$4, updated_at=NOW() WHERE user_id=$5`,
+            [subscription.plan || "free", subscription.status || "active", now, periodEnd, id]
+          );
+        } else {
+          await dbQuery(
+            `INSERT INTO subscriptions (user_id, plan, status, current_period_start, current_period_end, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+            [id, subscription.plan || "free", subscription.status || "active", now, periodEnd]
+          );
+        }
+      }
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
     }

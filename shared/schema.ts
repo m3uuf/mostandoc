@@ -172,7 +172,7 @@ export const notifications = pgTable("notifications", {
 export const subscriptions = pgTable("subscriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().unique(),
-  stripeCustomerId: varchar("stripe_customer_id").notNull(),
+  stripeCustomerId: varchar("stripe_customer_id"),
   stripeSubscriptionId: varchar("stripe_subscription_id"),
   stripePriceId: varchar("stripe_price_id"),
   plan: text("plan").default("free"),

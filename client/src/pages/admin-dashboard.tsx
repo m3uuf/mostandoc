@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -16,10 +17,15 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Users, FileText, Briefcase, Receipt, UserCheck, UserX,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Users, FileText, Activity, UserCheck, UserX,
   Search, MoreVertical, Shield, Ban, Trash2, RefreshCw,
-  TrendingUp, Database, ChevronRight, ChevronLeft, CalendarDays,
-  ShieldCheck, Activity,
+  Database, ChevronRight, ChevronLeft, ShieldCheck, CreditCard, Pencil,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
@@ -51,6 +57,9 @@ interface AdminUser {
   created_at: string;
   clients_count: string;
   contracts_count: string;
+  sub_plan: string | null;
+  sub_status: string | null;
+  sub_end: string | null;
 }
 
 interface UsersResponse {
@@ -61,12 +70,54 @@ interface UsersResponse {
   totalPages: number;
 }
 
+const PLAN_LABELS: Record<string, string> = {
+  free: "مجاني",
+  starter: "ستارتر",
+  pro: "برو",
+  business: "بيزنس",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "نشط",
+  inactive: "غير نشط",
+  trialing: "تجريبي",
+  canceled: "ملغي",
+  past_due: "متأخر",
+};
+
+function subBadge(plan: string | null, status: string | null) {
+  if (!plan || plan === "free" || !status || status === "inactive") {
+    return <Badge variant="outline" className="text-xs text-muted-foreground">مجاني</Badge>;
+  }
+  const colors: Record<string, string> = {
+    starter: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400",
+    pro: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400",
+    business: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400",
+  };
+  return (
+    <Badge variant="outline" className={`text-xs ${colors[plan] || ""}`}>
+      {PLAN_LABELS[plan] || plan}
+      {status === "trialing" && " (تجريبي)"}
+    </Badge>
+  );
+}
+
+function roleBadge(role: string) {
+  if (role === "superadmin") return <Badge className="bg-purple-600 text-white text-xs">سوبر أدمن</Badge>;
+  if (role === "admin") return <Badge className="bg-blue-600 text-white text-xs">أدمن</Badge>;
+  return <Badge variant="secondary" className="text-xs">مستخدم</Badge>;
+}
+
 export default function AdminDashboard() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [editTarget, setEditTarget] = useState<AdminUser | null>(null);
+  const [editRole, setEditRole] = useState("user");
+  const [editPlan, setEditPlan] = useState("free");
+  const [editSubStatus, setEditSubStatus] = useState("active");
 
   const { data: stats, refetch: refetchStats } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
@@ -108,10 +159,21 @@ export default function AdminDashboard() {
     setPage(1);
   };
 
-  const roleBadge = (role: string) => {
-    if (role === "superadmin") return <Badge className="bg-purple-600 text-white">سوبر أدمن</Badge>;
-    if (role === "admin") return <Badge className="bg-blue-600 text-white">أدمن</Badge>;
-    return <Badge variant="secondary">مستخدم</Badge>;
+  const openEdit = (user: AdminUser) => {
+    setEditTarget(user);
+    setEditRole(user.role === "superadmin" ? "user" : user.role);
+    setEditPlan(user.sub_plan || "free");
+    setEditSubStatus(user.sub_status && user.sub_status !== "inactive" ? user.sub_status : "active");
+  };
+
+  const saveEdit = () => {
+    if (!editTarget) return;
+    const payload: any = { role: editRole };
+    payload.subscription = { plan: editPlan, status: editPlan === "free" ? "inactive" : editSubStatus };
+    patchUser.mutate(
+      { id: editTarget.id, data: payload },
+      { onSuccess: () => setEditTarget(null) }
+    );
   };
 
   return (
@@ -222,6 +284,7 @@ export default function AdminDashboard() {
                     <tr className="border-b bg-muted/50">
                       <th className="text-right py-3 px-4 font-medium">المستخدم</th>
                       <th className="text-right py-3 px-4 font-medium hidden md:table-cell">الدور</th>
+                      <th className="text-right py-3 px-4 font-medium hidden md:table-cell">الاشتراك</th>
                       <th className="text-right py-3 px-4 font-medium hidden lg:table-cell">الحالة</th>
                       <th className="text-right py-3 px-4 font-medium hidden lg:table-cell">العملاء / العقود</th>
                       <th className="text-right py-3 px-4 font-medium hidden xl:table-cell">تاريخ التسجيل</th>
@@ -230,10 +293,10 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {usersLoading && (
-                      <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">جارٍ التحميل...</td></tr>
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">جارٍ التحميل...</td></tr>
                     )}
                     {!usersLoading && (!usersData?.data?.length) && (
-                      <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">لا يوجد مستخدمون</td></tr>
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">لا يوجد مستخدمون</td></tr>
                     )}
                     {usersData?.data?.map((user) => (
                       <tr key={user.id} className="border-b hover:bg-muted/30 transition-colors" data-testid={`row-user-${user.id}`}>
@@ -247,6 +310,14 @@ export default function AdminDashboard() {
                         </td>
                         <td className="py-3 px-4 hidden md:table-cell">
                           {roleBadge(user.role)}
+                        </td>
+                        <td className="py-3 px-4 hidden md:table-cell">
+                          {subBadge(user.sub_plan, user.sub_status)}
+                          {user.sub_end && user.sub_plan !== "free" && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              حتى {format(new Date(user.sub_end), "dd/MM/yyyy")}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 hidden lg:table-cell">
                           {user.is_suspended ? (
@@ -269,18 +340,10 @@ export default function AdminDashboard() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {user.role !== "admin" && (
-                                <DropdownMenuItem onClick={() => patchUser.mutate({ id: user.id, data: { role: "admin" } })}>
-                                  <Shield className="h-4 w-4 ml-2 text-blue-500" />
-                                  ترقية لأدمن
-                                </DropdownMenuItem>
-                              )}
-                              {user.role === "admin" && (
-                                <DropdownMenuItem onClick={() => patchUser.mutate({ id: user.id, data: { role: "user" } })}>
-                                  <Shield className="h-4 w-4 ml-2 text-muted-foreground" />
-                                  إلغاء صلاحيات الأدمن
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuItem onClick={() => openEdit(user)}>
+                                <Pencil className="h-4 w-4 ml-2 text-primary" />
+                                تعديل الصلاحيات والاشتراك
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               {!user.is_suspended ? (
                                 <DropdownMenuItem onClick={() => patchUser.mutate({ id: user.id, data: { isSuspended: true } })}>
@@ -330,6 +393,89 @@ export default function AdminDashboard() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={open => !open && setEditTarget(null)}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              تعديل المستخدم
+            </DialogTitle>
+          </DialogHeader>
+
+          {editTarget && (
+            <div className="space-y-5 py-2">
+              {/* User info */}
+              <div className="bg-muted/40 rounded-lg px-4 py-3 text-sm">
+                <div className="font-medium">{editTarget.first_name} {editTarget.last_name}</div>
+                <div className="text-muted-foreground">{editTarget.email}</div>
+              </div>
+
+              {/* Role */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-blue-500" />
+                  الصلاحيات
+                </Label>
+                <Select value={editRole} onValueChange={setEditRole} dir="rtl">
+                  <SelectTrigger data-testid="select-edit-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">مستخدم عادي</SelectItem>
+                    <SelectItem value="admin">أدمن</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Subscription Plan */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-purple-500" />
+                  الباقة
+                </Label>
+                <Select value={editPlan} onValueChange={setEditPlan} dir="rtl">
+                  <SelectTrigger data-testid="select-edit-plan">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">مجاني</SelectItem>
+                    <SelectItem value="starter">ستارتر — 29 ريال/شهر</SelectItem>
+                    <SelectItem value="pro">برو — 59 ريال/شهر</SelectItem>
+                    <SelectItem value="business">بيزنس — 99 ريال/شهر</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Subscription Status (only if not free) */}
+              {editPlan !== "free" && (
+                <div className="space-y-2">
+                  <Label>حالة الاشتراك</Label>
+                  <Select value={editSubStatus} onValueChange={setEditSubStatus} dir="rtl">
+                    <SelectTrigger data-testid="select-edit-sub-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">نشط</SelectItem>
+                      <SelectItem value="trialing">تجريبي</SelectItem>
+                      <SelectItem value="canceled">ملغي</SelectItem>
+                      <SelectItem value="past_due">متأخر</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditTarget(null)}>إلغاء</Button>
+            <Button onClick={saveEdit} disabled={patchUser.isPending} data-testid="button-save-edit-user">
+              {patchUser.isPending ? "جارٍ الحفظ..." : "حفظ التغييرات"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirm */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
