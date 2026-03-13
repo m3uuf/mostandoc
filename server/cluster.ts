@@ -9,7 +9,12 @@
 import cluster from "node:cluster";
 import os from "node:os";
 
-const numWorkers = parseInt(process.env.CLUSTER_WORKERS || "", 10) || os.cpus().length;
+// Cap at 4 workers max to avoid overwhelming DB connections on large machines
+const maxWorkers = 4;
+const numWorkers = Math.min(
+  parseInt(process.env.CLUSTER_WORKERS || "", 10) || os.cpus().length,
+  maxWorkers
+);
 
 if (cluster.isPrimary) {
   console.log(`[cluster] Primary ${process.pid} starting ${numWorkers} workers...`);
@@ -29,5 +34,8 @@ if (cluster.isPrimary) {
   });
 } else {
   // Workers run the actual server
-  import("./index.cjs");
+  import("./index.cjs").catch((err) => {
+    console.error(`[cluster] Worker ${process.pid} failed to start:`, err);
+    process.exit(1);
+  });
 }

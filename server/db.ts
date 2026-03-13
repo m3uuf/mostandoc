@@ -12,11 +12,12 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Connection pooling for 1000+ users
-  max: parseInt(process.env.DB_POOL_MAX || "20", 10),          // max connections
-  min: parseInt(process.env.DB_POOL_MIN || "5", 10),           // keep 5 warm
+  // Connection pooling — conservative defaults for cluster mode
+  // Each worker gets its own pool, so total = workers × max
+  max: parseInt(process.env.DB_POOL_MAX || "10", 10),          // max connections per worker
+  min: parseInt(process.env.DB_POOL_MIN || "2", 10),           // keep 2 warm per worker
   idleTimeoutMillis: 30000,                                     // close idle after 30s
-  connectionTimeoutMillis: 5000,                                // fail if can't connect in 5s
+  connectionTimeoutMillis: 10000,                               // fail if can't connect in 10s
   maxUses: 7500,                                                // recycle connection after 7500 queries
 });
 export const db = drizzle(pool, { schema });
