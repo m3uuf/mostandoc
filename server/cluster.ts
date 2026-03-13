@@ -29,5 +29,5 @@ if (cluster.isPrimary) {
   });
 } else {
   // Workers run the actual server
-  import("./index.js");
+  import("./index.cjs");
 }
