@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import SignatureCanvas from "react-signature-canvas";
@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, CheckCircle, PenTool, FileText } from "lucide-react";
+import { Loader2, CheckCircle, PenTool, FileText, Type, Calendar, Hash } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import type { Document, DocumentField } from "@shared/schema";
+import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType, FIELD_CONFIG } from "@/components/editor/fillable-fields-extension";
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
@@ -51,6 +52,8 @@ export default function SignDocument() {
   const [signerEmail, setSignerEmail] = useState("");
   const [signed, setSigned] = useState(false);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [fillableValues, setFillableValues] = useState<Record<number, string>>({});
+  const fillableSigRefs = useRef<Record<number, SignatureCanvas | null>>({});
 
   const { data: doc, isLoading, error } = useQuery<DocumentWithDetails>({
     queryKey: ["/api/documents/sign", params.token],
@@ -74,11 +77,22 @@ export default function SignDocument() {
         throw new Error("الاسم مطلوب");
       }
       const signatureData = sigPadRef.current.toDataURL("image/png");
+
+      // Collect fillable field signature data
+      const fillableSigData: Record<number, string> = {};
+      Object.entries(fillableSigRefs.current).forEach(([idx, ref]) => {
+        if (ref && !ref.isEmpty()) {
+          fillableSigData[Number(idx)] = ref.toDataURL("image/png");
+        }
+      });
+
       const res = await apiRequest("POST", `/api/documents/sign/${params.token}`, {
         signerName: signerName.trim(),
         signerEmail: signerEmail.trim() || undefined,
         signatureData,
         fieldValues: Object.keys(fieldValues).length > 0 ? fieldValues : undefined,
+        fillableFieldValues: Object.keys(fillableValues).length > 0 ? fillableValues : undefined,
+        fillableSignatures: Object.keys(fillableSigData).length > 0 ? fillableSigData : undefined,
       });
       if (!res.ok) {
         const data = await res.json();
@@ -93,6 +107,14 @@ export default function SignDocument() {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
+
+  // Extract fillable fields from text document content (must be before early returns)
+  const fillableFields = useMemo(() => {
+    if (doc?.docType === "text" && doc.content) {
+      return extractFillableFields(doc.content as string);
+    }
+    return [];
+  }, [doc]);
 
   if (isLoading) {
     return (
@@ -156,56 +178,157 @@ export default function SignDocument() {
         {/* Document preview */}
         <Card>
           <CardContent className="p-0">
-            <div className="relative bg-white dark:bg-gray-900 rounded-lg overflow-hidden" style={{ minHeight: 400 }}>
-              {doc.fileType === "image" ? (
-                <img src={doc.fileUrl} alt={doc.title} className="w-full h-auto" />
-              ) : (
-                <PdfRenderer fileUrl={doc.fileUrl} />
-              )}
-
-              {/* Show fields on document */}
-              {doc.fields?.map((field) => (
+            {doc.docType === "text" ? (
+              /* ─── Text Document (HTML content) ───────────────── */
+              <div>
                 <div
-                  key={field.id}
-                  className="absolute border-2 border-dashed border-primary/40 bg-primary/5 rounded flex items-center justify-center overflow-hidden"
-                  style={{
-                    left: Number(field.x),
-                    top: Number(field.y),
-                    width: Number(field.width),
-                    height: Number(field.height),
-                  }}
-                >
-                  {field.type === "signature" ? (
-                    <span className="text-xs text-primary text-center">
-                      <PenTool className="h-4 w-4 mx-auto mb-1" />
-                      منطقة التوقيع
-                    </span>
-                  ) : field.type === "text" ? (
-                    <input
-                      type="text"
-                      value={fieldValues[field.id] || field.value || ""}
-                      onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }))}
-                      placeholder={field.label || "نص"}
-                      className="w-full h-full text-xs px-1 bg-transparent border-0 outline-none text-center"
-                      data-testid={`field-input-${field.id}`}
-                    />
-                  ) : field.type === "date" ? (
-                    <input
-                      type="date"
-                      value={fieldValues[field.id] || field.value || ""}
-                      onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }))}
-                      className="w-full h-full text-xs px-1 bg-transparent border-0 outline-none text-center"
-                      data-testid={`field-date-${field.id}`}
-                    />
-                  ) : (
-                    <span className="text-xs px-2">{field.value || field.label}</span>
-                  )}
-                  <div className="absolute -top-5 right-0 text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-t font-medium whitespace-nowrap">
-                    {field.label}
+                  className="prose prose-sm max-w-none px-8 py-6 bg-white dark:bg-gray-900 rounded-t-lg text-base leading-relaxed"
+                  dir="auto"
+                  dangerouslySetInnerHTML={{ __html: (doc as any).content || "" }}
+                  style={{ minHeight: 300, fontFamily: "'IBM Plex Sans Arabic', Tahoma, sans-serif" }}
+                />
+
+                {/* ─── Fillable Fields Interactive Section ───── */}
+                {fillableFields.length > 0 && (
+                  <div className="border-t bg-gray-50 dark:bg-gray-900/50 px-8 py-6 rounded-b-lg space-y-4" dir="rtl">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <PenTool className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-sm">حقول مطلوب تعبئتها</h3>
+                        <p className="text-xs text-muted-foreground">يرجى تعبئة الحقول التالية قبل التوقيع</p>
+                      </div>
+                    </div>
+
+                    {fillableFields.map((field, idx) => {
+                      const config = FIELD_CONFIG[field.fieldType];
+                      return (
+                        <div
+                          key={idx}
+                          className="signing-fillable-field"
+                          style={{
+                            borderColor: `${config.color}60`,
+                            background: `${config.color}05`,
+                            ["--field-color-alpha" as any]: `${config.color}20`,
+                          }}
+                        >
+                          <div className="field-label" style={{ color: config.color }}>
+                            <span>{config.emoji}</span>
+                            <span>{field.label}</span>
+                            {field.required && <span className="text-red-500 text-xs">*</span>}
+                          </div>
+
+                          {field.fieldType === "signature" ? (
+                            <div>
+                              <div className="border-2 border-dashed rounded-lg overflow-hidden bg-white" style={{ borderColor: `${config.color}40` }}>
+                                <SignatureCanvas
+                                  ref={(ref) => { fillableSigRefs.current[idx] = ref; }}
+                                  penColor={config.color}
+                                  canvasProps={{
+                                    width: 500,
+                                    height: 150,
+                                    className: "w-full",
+                                  }}
+                                />
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="mt-1 text-xs"
+                                style={{ color: config.color }}
+                                onClick={() => fillableSigRefs.current[idx]?.clear()}
+                              >
+                                مسح
+                              </Button>
+                            </div>
+                          ) : field.fieldType === "date" ? (
+                            <input
+                              type="date"
+                              className="field-input"
+                              style={{ borderBottomColor: `${config.color}40`, color: config.color }}
+                              value={fillableValues[idx] || ""}
+                              onChange={(e) => setFillableValues((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            />
+                          ) : field.fieldType === "initials" ? (
+                            <input
+                              type="text"
+                              className="field-input"
+                              style={{ borderBottomColor: `${config.color}40`, color: config.color }}
+                              placeholder="أدخل الأحرف الأولى..."
+                              maxLength={5}
+                              value={fillableValues[idx] || ""}
+                              onChange={(e) => setFillableValues((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              className="field-input"
+                              style={{ borderBottomColor: `${config.color}40`, color: config.color }}
+                              placeholder={`أدخل ${field.label}...`}
+                              value={fillableValues[idx] || ""}
+                              onChange={(e) => setFillableValues((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </div>
+            ) : (
+              /* ─── File Document (PDF/Image) ──────────────────── */
+              <div className="relative bg-white dark:bg-gray-900 rounded-lg overflow-hidden" style={{ minHeight: 400 }}>
+                {doc.fileType === "image" ? (
+                  <img src={doc.fileUrl} alt={doc.title} className="w-full h-auto" />
+                ) : (
+                  <PdfRenderer fileUrl={doc.fileUrl!} />
+                )}
+
+                {/* Show fields on document */}
+                {doc.fields?.map((field) => (
+                  <div
+                    key={field.id}
+                    className="absolute border-2 border-dashed border-primary/40 bg-primary/5 rounded flex items-center justify-center overflow-hidden"
+                    style={{
+                      left: Number(field.x),
+                      top: Number(field.y),
+                      width: Number(field.width),
+                      height: Number(field.height),
+                    }}
+                  >
+                    {field.type === "signature" ? (
+                      <span className="text-xs text-primary text-center">
+                        <PenTool className="h-4 w-4 mx-auto mb-1" />
+                        منطقة التوقيع
+                      </span>
+                    ) : field.type === "text" ? (
+                      <input
+                        type="text"
+                        value={fieldValues[field.id] || field.value || ""}
+                        onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                        placeholder={field.label || "نص"}
+                        className="w-full h-full text-xs px-1 bg-transparent border-0 outline-none text-center"
+                        data-testid={`field-input-${field.id}`}
+                      />
+                    ) : field.type === "date" ? (
+                      <input
+                        type="date"
+                        value={fieldValues[field.id] || field.value || ""}
+                        onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                        className="w-full h-full text-xs px-1 bg-transparent border-0 outline-none text-center"
+                        data-testid={`field-date-${field.id}`}
+                      />
+                    ) : (
+                      <span className="text-xs px-2">{field.value || field.label}</span>
+                    )}
+                    <div className="absolute -top-5 right-0 text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-t font-medium whitespace-nowrap">
+                      {field.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

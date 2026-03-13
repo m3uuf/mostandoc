@@ -41,13 +41,13 @@ export default function DocumentsPage() {
     queryKey: ["/api/documents"],
   });
 
-  const { data: clients } = useQuery<Client[]>({
+  const { data: clientsResult } = useQuery<{ data: Client[]; total: number }>({
     queryKey: ["/api/clients"],
   });
 
   const getClientName = (clientId: string | null) => {
-    if (!clientId || !clients) return null;
-    const client = clients.find((c) => c.id === clientId);
+    if (!clientId || !clientsResult?.data) return null;
+    const client = clientsResult.data.find((c) => c.id === clientId);
     return client?.name || null;
   };
 

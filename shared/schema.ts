@@ -227,6 +227,20 @@ export const documentSignatures = pgTable("document_signatures", {
   signedAt: timestamp("signed_at").defaultNow(),
 });
 
+// ─── Content Library ─────────────────────────────────────────────
+export const contentLibrary = pgTable("content_library", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  content: text("content").notNull(),
+  category: text("category").default("general"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("content_library_user_idx").on(table.userId),
+]);
+
 export const insertProfileSchema = createInsertSchema(profiles).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
@@ -271,3 +285,117 @@ export type InsertDocumentField = z.infer<typeof insertDocumentFieldSchema>;
 export type DocumentField = typeof documentFields.$inferSelect;
 export type InsertDocumentSignature = z.infer<typeof insertDocumentSignatureSchema>;
 export type DocumentSignature = typeof documentSignatures.$inferSelect;
+export const insertContentLibrarySchema = createInsertSchema(contentLibrary).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertContentLibrary = z.infer<typeof insertContentLibrarySchema>;
+export type ContentLibraryItem = typeof contentLibrary.$inferSelect;
+
+// ─── Audit Logs (سجل النشاطات) ──────────────────────────────────
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  actorId: varchar("actor_id").notNull(),
+  action: text("action").notNull(),
+  targetType: text("target_type"),
+  targetId: varchar("target_id"),
+  details: jsonb("details").$type<Record<string, any>>(),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_audit_logs_actor_id").on(table.actorId),
+  index("idx_audit_logs_created_at").on(table.createdAt),
+  index("idx_audit_logs_action").on(table.action),
+]);
+
+// ─── Platform Templates (قوالب المنصة) ──────────────────────────
+export const platformTemplates = pgTable("platform_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  content: text("content").notNull(),
+  category: text("category").default("general"),
+  icon: text("icon"),
+  color: text("color").default("#3B5FE5"),
+  isFeatured: boolean("is_featured").default(false),
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  usageCount: integer("usage_count").default(0),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ─── Platform Settings (إعدادات المنصة) ─────────────────────────
+export const platformSettings = pgTable("platform_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").unique().notNull(),
+  value: jsonb("value").$type<any>().notNull(),
+  updatedBy: varchar("updated_by"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ─── Admin Notifications (إشعارات الأدمن) ───────────────────────
+export const adminNotifications = pgTable("admin_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  targetUserId: varchar("target_user_id"),
+  sentBy: varchar("sent_by").notNull(),
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ─── Discount Coupons (كوبونات الخصم) ───────────────────────────
+export const discountCoupons = pgTable("discount_coupons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").unique().notNull(),
+  discountType: text("discount_type").default("percentage"),
+  discountValue: decimal("discount_value", { precision: 10, scale: 2 }).notNull(),
+  maxUses: integer("max_uses"),
+  usedCount: integer("used_count").default(0),
+  validFrom: timestamp("valid_from"),
+  validUntil: timestamp("valid_until"),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ─── Tracking Scripts (أكواد التتبع والسكربتات) ─────────────────
+export const trackingScripts = pgTable("tracking_scripts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  platform: text("platform").notNull(), // google_analytics, google_tag_manager, meta_pixel, snapchat_pixel, tiktok_pixel, twitter_pixel, linkedin_pixel, custom
+  trackingId: text("tracking_id"), // e.g. GA-XXXXXXX, GTM-XXXXXXX, pixel ID
+  headCode: text("head_code"), // code injected in <head>
+  bodyCode: text("body_code"), // code injected after <body>
+  placement: text("placement").default("all"), // all, landing_only, dashboard_only, public_profile
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ─── Insert Schemas & Types ─────────────────────────────────────
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const insertPlatformTemplateSchema = createInsertSchema(platformTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlatformTemplate = z.infer<typeof insertPlatformTemplateSchema>;
+export type PlatformTemplate = typeof platformTemplates.$inferSelect;
+
+export const insertPlatformSettingSchema = createInsertSchema(platformSettings).omit({ id: true, updatedAt: true });
+export type InsertPlatformSetting = z.infer<typeof insertPlatformSettingSchema>;
+export type PlatformSetting = typeof platformSettings.$inferSelect;
+
+export const insertAdminNotificationSchema = createInsertSchema(adminNotifications).omit({ id: true, createdAt: true });
+export type InsertAdminNotification = z.infer<typeof insertAdminNotificationSchema>;
+export type AdminNotification = typeof adminNotifications.$inferSelect;
+
+export const insertDiscountCouponSchema = createInsertSchema(discountCoupons).omit({ id: true, createdAt: true });
+export type InsertDiscountCoupon = z.infer<typeof insertDiscountCouponSchema>;
+export type DiscountCoupon = typeof discountCoupons.$inferSelect;
+
+export const insertTrackingScriptSchema = createInsertSchema(trackingScripts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTrackingScript = z.infer<typeof insertTrackingScriptSchema>;
+export type TrackingScript = typeof trackingScripts.$inferSelect;

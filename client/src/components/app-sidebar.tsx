@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown, FilePenLine, ShieldCheck
+  LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown, FilePenLine, ShieldCheck, LayoutTemplate
 } from "lucide-react";
 import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
 import {
@@ -23,6 +23,7 @@ const menuItems = [
   { title: "الفواتير", url: "/dashboard/invoices", icon: Receipt },
   { title: "المشاريع", url: "/dashboard/projects", icon: FolderKanban },
   { title: "المستندات", url: "/dashboard/documents", icon: FilePenLine },
+  { title: "القوالب", url: "/dashboard/templates", icon: LayoutTemplate },
   { title: "صفحتي العامة", url: "/dashboard/my-page", icon: Globe },
   { title: "الإعدادات", url: "/dashboard/settings", icon: Settings },
 ];

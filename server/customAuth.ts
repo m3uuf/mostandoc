@@ -10,6 +10,7 @@ import { eq, and, gt } from "drizzle-orm";
 declare module "express-session" {
   interface SessionData {
     userId: string;
+    originalAdminId?: string;
   }
 }
 
@@ -54,6 +55,17 @@ export const isAdmin: RequestHandler = async (req, res, next) => {
   const user = await getUserById(req.session.userId);
   if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
     return res.status(403).json({ message: "صلاحيات غير كافية" });
+  }
+  return next();
+};
+
+export const isSuperAdmin: RequestHandler = async (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "غير مصرح" });
+  }
+  const user = await getUserById(req.session.userId);
+  if (!user || user.role !== "superadmin") {
+    return res.status(403).json({ message: "صلاحيات سوبر أدمن مطلوبة" });
   }
   return next();
 };

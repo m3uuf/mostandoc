@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,22 +11,24 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Loader2, FileText, Pencil, Trash2, Download } from "lucide-react";
+import { Plus, Loader2, FileText, Pencil, Trash2, Download, ExternalLink } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
+import { EDITOR_TEMPLATES } from "@/components/editor/editor-templates";
 import type { Contract, Client, Profile } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { draft: "مسودة", active: "نشط", completed: "مكتمل", expired: "منتهي", terminated: "ملغي" };
 const statusColors: Record<string, "default" | "secondary" | "destructive"> = { draft: "secondary", active: "default", completed: "default", expired: "destructive", terminated: "destructive" };
 
-const templates = [
-  { name: "عقد تقديم خدمات", content: `عقد تقديم خدمات\n\nتم الاتفاق بين:\nالطرف الأول: ________\nالطرف الثاني: ________\n\nالمادة الأولى - نطاق العمل:\nيقوم الطرف الثاني بتقديم الخدمات التالية:\n- ________\n\nالمادة الثانية - المقابل المالي:\nيلتزم الطرف الأول بدفع مبلغ ________ ريال سعودي.\n\nالمادة الثالثة - مدة العقد:\nيبدأ هذا العقد من تاريخ ________ وينتهي بتاريخ ________.\n\nالمادة الرابعة - شروط الإنهاء:\nيحق لأي طرف إنهاء العقد بإشعار كتابي مدته 30 يوماً.\n\nالتوقيع:\nالطرف الأول: ________\nالطرف الثاني: ________` },
-  { name: "عقد مشروع", content: `عقد تنفيذ مشروع\n\nبين:\nالطرف الأول (العميل): ________\nالطرف الثاني (المنفذ): ________\n\nالمادة الأولى - وصف المشروع:\n________\n\nالمادة الثانية - المراحل والتسليمات:\n1. المرحلة الأولى: ________\n2. المرحلة الثانية: ________\n\nالمادة الثالثة - الجدول الزمني:\nتاريخ البدء: ________\nتاريخ التسليم النهائي: ________\n\nالمادة الرابعة - الدفعات:\n- دفعة مقدمة: 30%\n- عند التسليم: 70%\n\nالتوقيع:\nالطرف الأول: ________\nالطرف الثاني: ________` },
-  { name: "عقد استشارات", content: `عقد تقديم استشارات\n\nالطرف الأول: ________\nالطرف الثاني (المستشار): ________\n\nالمادة الأولى - نطاق الاستشارة:\n________\n\nالمادة الثانية - الأتعاب:\nمبلغ ________ ريال سعودي مقابل ________ ساعة استشارية.\n\nالمادة الثالثة - السرية:\nيلتزم الطرف الثاني بعدم إفشاء أي معلومات سرية.\n\nالمادة الرابعة - المدة:\nمن ________ إلى ________.\n\nالتوقيع:\nالطرف الأول: ________\nالطرف الثاني: ________` },
-];
+// Use contract templates from the central editor templates (HTML format)
+const templates = EDITOR_TEMPLATES.filter(t => t.category === "contract").map(t => ({
+  name: t.label,
+  content: t.getContent(),
+}));
 
 export default function ContractsPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [filterStatus, setFilterStatus] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | null>(null);
@@ -133,6 +136,39 @@ export default function ContractsPage() {
     }
   }, [toast]);
 
+  // Open contract in the rich text editor by creating a text document from it
+  const openInEditorMutation = useMutation({
+    mutationFn: async (contract: Contract) => {
+      // Convert plain text content to HTML if needed
+      let htmlContent = contract.content || "";
+      if (htmlContent && !htmlContent.includes("<")) {
+        // Plain text → wrap paragraphs in <p> tags
+        htmlContent = htmlContent
+          .split("\n\n")
+          .map((para) => `<p>${para.replace(/\n/g, "<br />")}</p>`)
+          .join("");
+      }
+      const res = await apiRequest("POST", "/api/documents", {
+        title: contract.title,
+        content: htmlContent || "<p></p>",
+        docType: "text",
+        clientId: contract.clientId || null,
+      });
+      return res.json();
+    },
+    onSuccess: (newDoc: any) => {
+      toast({ title: "تم فتح العقد في المحرر" });
+      navigate(`/dashboard/documents/text/${newDoc.id}`);
+    },
+    onError: () => {
+      toast({ title: "فشل فتح العقد في المحرر", variant: "destructive" });
+    },
+  });
+
+  const openInEditor = (contract: Contract) => {
+    openInEditorMutation.mutate(contract);
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -172,6 +208,7 @@ export default function ContractsPage() {
                   <span>{contract.endDate || "-"}</span>
                 </div>
                 <div className="flex items-center gap-1 pt-1">
+                  <Button size="icon" variant="ghost" onClick={() => openInEditor(contract)} title="فتح في المحرر" data-testid={`button-editor-contract-${contract.id}`}><ExternalLink className="h-4 w-4 text-primary" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => downloadContractPdf(contract)} disabled={pdfGenerating} data-testid={`button-pdf-contract-${contract.id}`}><Download className="h-4 w-4" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => openEdit(contract)} data-testid={`button-edit-contract-${contract.id}`}><Pencil className="h-4 w-4" /></Button>
                   <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(contract.id)} data-testid={`button-delete-contract-${contract.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>

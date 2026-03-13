@@ -10,9 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Pencil, Trash2, Loader2, Users } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2, Users, Eye, FileText, Download, CheckCircle, Clock, Send } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
-import type { Client } from "@shared/schema";
+import type { Client, Document } from "@shared/schema";
 
 const statusLabels: Record<string, string> = { active: "نشط", prospect: "محتمل", inactive: "غير نشط" };
 const statusColors: Record<string, "default" | "secondary" | "destructive"> = { active: "default", prospect: "secondary", inactive: "destructive" };
@@ -26,6 +26,7 @@ export default function ClientsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "", company: "", status: "active", notes: "" });
   const [page, setPage] = useState(1);
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
 
   useEffect(() => { setPage(1); }, [search, filterStatus]);
 
@@ -42,6 +43,16 @@ export default function ClientsPage() {
     },
   });
   const { data: clientsList = [], total = 0, totalPages = 0, limit = 20 } = result || {};
+
+  const { data: clientDocs = [] } = useQuery<Document[]>({
+    queryKey: ["/api/clients", viewingClient?.id, "documents"],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${viewingClient!.id}/documents`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!viewingClient,
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/clients", data),
@@ -164,6 +175,7 @@ export default function ClientsPage() {
                     <td className="p-3"><Badge variant={statusColors[client.status || "active"]}>{statusLabels[client.status || "active"]}</Badge></td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => setViewingClient(client)} title="عرض التفاصيل"><Eye className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => openEdit(client)} data-testid={`button-edit-client-${client.id}`}><Pencil className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(client.id)} data-testid={`button-delete-client-${client.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                       </div>
@@ -220,6 +232,92 @@ export default function ClientsPage() {
               {deleteMutation.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} حذف
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Client Details Dialog */}
+      <Dialog open={!!viewingClient} onOpenChange={() => setViewingClient(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {viewingClient && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  {viewingClient.name}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {/* Client Info */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {viewingClient.email && (
+                    <div><span className="text-muted-foreground">البريد:</span> <span className="font-medium">{viewingClient.email}</span></div>
+                  )}
+                  {viewingClient.phone && (
+                    <div><span className="text-muted-foreground">الجوال:</span> <span className="font-medium">{viewingClient.phone}</span></div>
+                  )}
+                  {viewingClient.company && (
+                    <div><span className="text-muted-foreground">الشركة:</span> <span className="font-medium">{viewingClient.company}</span></div>
+                  )}
+                  <div>
+                    <span className="text-muted-foreground">الحالة:</span>{" "}
+                    <Badge variant={statusColors[viewingClient.status || "active"]}>{statusLabels[viewingClient.status || "active"]}</Badge>
+                  </div>
+                </div>
+
+                {/* Documents Section */}
+                <div>
+                  <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    المستندات ({clientDocs.length})
+                  </h3>
+                  {clientDocs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">لا توجد مستندات مرتبطة بهذا العميل</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {clientDocs.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20 hover:bg-muted/40 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="shrink-0">
+                              {doc.status === "signed" ? (
+                                <CheckCircle className="h-5 w-5 text-green-500" />
+                              ) : doc.status === "sent" ? (
+                                <Send className="h-5 w-5 text-blue-500" />
+                              ) : (
+                                <Clock className="h-5 w-5 text-yellow-500" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{doc.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {doc.status === "signed" && doc.signedAt
+                                  ? `موقّع ${new Date(doc.signedAt).toLocaleDateString("ar-SA")}`
+                                  : doc.status === "sent"
+                                  ? "بانتظار التوقيع"
+                                  : "مسودة"
+                                }
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Badge variant={doc.status === "signed" ? "default" : doc.status === "sent" ? "secondary" : "outline"} className="text-[10px]">
+                              {doc.status === "signed" ? "موقّع" : doc.status === "sent" ? "مُرسل" : "مسودة"}
+                            </Badge>
+                            {doc.status === "signed" && doc.fileUrl && (
+                              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" title="تحميل النسخة الموقعة">
+                                <Button size="icon" variant="ghost" className="h-7 w-7">
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

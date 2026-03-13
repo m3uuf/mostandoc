@@ -122,6 +122,19 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Templates CTA */}
+      <section className="container mx-auto px-4 py-12">
+        <div className="bg-primary/5 border border-primary/10 rounded-2xl p-8 text-center max-w-2xl mx-auto">
+          <h2 className="text-xl md:text-2xl font-bold mb-3">قوالب عقود ومستندات جاهزة</h2>
+          <p className="text-sm text-muted-foreground mb-5">عقود خدمات، عقود مشاريع، عروض أسعار، اتفاقيات سرية والمزيد — جاهزة للتعديل والإرسال</p>
+          <a href="/templates">
+            <Button variant="outline" className="rounded-full px-6">
+              تصفح القوالب المجانية
+            </Button>
+          </a>
+        </div>
+      </section>
+
       <section className="container mx-auto px-4 py-16 md:py-24">
         <h2 className="text-2xl md:text-3xl font-bold text-center mb-12">اختر الخطة المناسبة</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">

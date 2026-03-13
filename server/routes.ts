@@ -2,19 +2,29 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import rateLimit from "express-rate-limit";
 import Stripe from "stripe";
+import Anthropic from "@anthropic-ai/sdk";
 import { sql, eq } from "drizzle-orm";
 import { db, dbQuery } from "./db";
 import { users } from "@shared/models/auth";
 import { storage } from "./storage";
-import { setupCustomAuth, isAuthenticated, isAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
+import { setupCustomAuth, isAuthenticated, isAdmin, isSuperAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
+import { logAudit, getClientIp } from "./audit";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
 import { z } from "zod";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as FacebookStrategy } from "passport-facebook";
+import express from "express";
+import path from "path";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-01-27.acacia" as any });
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-01-27.acacia" as any })
+  : null;
+
+const anthropic = process.env.ANTHROPIC_API_KEY
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
 
 const PLANS: Record<string, { name: string; priceAmount: number }> = {
   starter: { name: "المبتدئ", priceAmount: 2900 },
@@ -43,9 +53,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Serve uploaded signed documents
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: "تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً." },
@@ -477,6 +490,21 @@ export async function registerRoutes(
       res.json(profile);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث البروفايل" });
+    }
+  });
+
+  // ─── Global Search (بحث موحد) ────────────────────────────────────
+  app.get("/api/search", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (!q || q.length < 2) {
+        return res.json({ clients: [], contracts: [], invoices: [], documents: [], projects: [] });
+      }
+      const limit = Math.min(10, parseInt(req.query.limit as string) || 5);
+      const results = await storage.globalSearch(getUserId(req), q, limit);
+      res.json(results);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message || "فشل في البحث" });
     }
   });
 
@@ -966,6 +994,7 @@ export async function registerRoutes(
 
   app.post("/api/subscription/checkout", isAuthenticated, async (req, res) => {
     try {
+      if (!stripe) return res.status(503).json({ message: "خدمة المدفوعات غير مفعّلة" });
       const { plan } = req.body;
       if (!PLANS[plan]) return res.status(400).json({ message: "باقة غير صالحة" });
 
@@ -979,7 +1008,7 @@ export async function registerRoutes(
       if (sub?.stripeCustomerId) {
         customerId = sub.stripeCustomerId;
       } else {
-        const customer = await stripe.customers.create({
+        const customer = await stripe!.customers.create({
           email: userEmail || undefined,
           metadata: { userId },
         });
@@ -989,7 +1018,7 @@ export async function registerRoutes(
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-      const session = await stripe.checkout.sessions.create({
+      const session = await stripe!.checkout.sessions.create({
         customer: customerId,
         payment_method_types: ["card"],
         mode: "subscription",
@@ -1020,11 +1049,12 @@ export async function registerRoutes(
 
   app.post("/api/subscription/portal", isAuthenticated, async (req, res) => {
     try {
+      if (!stripe) return res.status(503).json({ message: "خدمة المدفوعات غير مفعّلة" });
       const sub = await storage.getSubscription(getUserId(req));
       if (!sub?.stripeCustomerId) return res.status(400).json({ message: "لا يوجد اشتراك" });
 
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const session = await stripe.billingPortal.sessions.create({
+      const session = await stripe!.billingPortal.sessions.create({
         customer: sub.stripeCustomerId,
         return_url: `${baseUrl}/dashboard/settings`,
       });
@@ -1037,6 +1067,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/webhooks/stripe", async (req, res) => {
+    if (!stripe) return res.status(503).json({ message: "Stripe not configured" });
     const sig = req.headers["stripe-signature"] as string;
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -1044,7 +1075,7 @@ export async function registerRoutes(
     try {
       if (webhookSecret) {
         if (!sig) return res.status(400).json({ message: "Missing stripe-signature header" });
-        event = stripe.webhooks.constructEvent(req.rawBody as Buffer, sig, webhookSecret);
+        event = stripe!.webhooks.constructEvent(req.rawBody as Buffer, sig, webhookSecret);
       } else if (process.env.NODE_ENV === "production") {
         console.error("STRIPE_WEBHOOK_SECRET is not set in production");
         return res.status(500).json({ message: "Webhook not configured" });
@@ -1164,6 +1195,16 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get documents error:", error);
       res.status(500).json({ message: "فشل في تحميل المستندات" });
+    }
+  });
+
+  app.get("/api/clients/:clientId/documents", isAuthenticated, async (req, res) => {
+    try {
+      const docs = await storage.getDocumentsByClient(req.params.clientId, getUserId(req));
+      res.json(docs);
+    } catch (error) {
+      console.error("Get client documents error:", error);
+      res.status(500).json({ message: "فشل في تحميل مستندات العميل" });
     }
   });
 
@@ -1356,6 +1397,53 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Content Library ──────────────────────────────────────────
+  app.get("/api/content-library", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const items = await storage.getContentLibrary(userId);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ message: "فشل في جلب المكتبة" });
+    }
+  });
+
+  app.post("/api/content-library", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const { name, description, content, category } = req.body;
+      if (!name || !content) {
+        return res.status(400).json({ message: "الاسم والمحتوى مطلوبان" });
+      }
+      const block = await storage.createContentBlock({ userId, name, description, content, category });
+      res.json(block);
+    } catch (error) {
+      res.status(500).json({ message: "فشل في حفظ المحتوى" });
+    }
+  });
+
+  app.patch("/api/content-library/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const block = await storage.updateContentBlock(req.params.id, userId, req.body);
+      if (!block) return res.status(404).json({ message: "العنصر غير موجود" });
+      res.json(block);
+    } catch (error) {
+      res.status(500).json({ message: "فشل في تحديث المحتوى" });
+    }
+  });
+
+  app.delete("/api/content-library/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const deleted = await storage.deleteContentBlock(req.params.id, userId);
+      if (!deleted) return res.status(404).json({ message: "العنصر غير موجود" });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "فشل في حذف المحتوى" });
+    }
+  });
+
   // Public document signing
   app.get("/api/documents/sign/:shareToken", async (req, res) => {
     try {
@@ -1378,6 +1466,8 @@ export async function registerRoutes(
     signerEmail: z.string().email().max(254).optional().or(z.literal("")),
     signatureData: z.string().min(1).max(2000000),
     fieldValues: z.record(z.string()).optional(),
+    fillableFieldValues: z.record(z.string()).optional(),
+    fillableSignatures: z.record(z.string()).optional(),
   });
 
   app.post("/api/documents/sign/:shareToken", async (req, res) => {
@@ -1389,9 +1479,10 @@ export async function registerRoutes(
       }
       const parsed = signBodySchema.safeParse(req.body);
       if (!parsed.success) {
+        console.error("Sign validation error:", JSON.stringify(parsed.error.issues));
         return res.status(400).json({ message: "الاسم والتوقيع مطلوبان" });
       }
-      const { signerName, signerEmail, signatureData, fieldValues } = parsed.data;
+      const { signerName, signerEmail, signatureData, fieldValues, fillableFieldValues, fillableSignatures } = parsed.data;
       const ip = req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || "";
       if (fieldValues) {
         const docFields = await storage.getDocumentFields(doc.id);
@@ -1408,10 +1499,93 @@ export async function registerRoutes(
         signatureData,
         ipAddress: ip,
       });
-      await storage.updateDocument(doc.id, doc.userId, {
-        status: "signed",
-        signedAt: new Date(),
-      } as any);
+
+      // Auto-link document to client by matching signer email
+      if (signerEmail && !doc.clientId) {
+        try {
+          const client = await storage.getClientByEmail(signerEmail, doc.userId);
+          if (client) {
+            await storage.updateDocument(doc.id, doc.userId, { clientId: client.id } as any);
+          }
+        } catch (e) {
+          console.error("Auto-link client error:", e);
+        }
+      }
+
+      // Generate signed PDF for text documents
+      let signedPdfUrl: string | null = null;
+      if (doc.docType === "text" && doc.content) {
+        try {
+          const fs = await import("fs");
+          const path = await import("path");
+          const uploadsDir = path.join(process.cwd(), "uploads", "signed");
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+
+          const dateStr = new Date().toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+
+          // Replace fillable field placeholders in content with filled values
+          let processedContent = doc.content as string;
+          if (fillableFieldValues || fillableSignatures) {
+            // Use regex to find and replace fillable field divs
+            let fieldIndex = 0;
+            processedContent = processedContent.replace(
+              /(<div[^>]*data-type="fillableField"[^>]*data-field-type="([^"]*)"[^>]*data-label="([^"]*)"[^>]*>)([\s\S]*?)(<\/div>)/g,
+              (_match, _openTag, fieldType, label, _innerContent, _closeTag) => {
+                const idx = fieldIndex++;
+                const value = fillableFieldValues?.[String(idx)] || "";
+                const sigData = fillableSignatures?.[String(idx)] || "";
+
+                if (fieldType === "signature" && sigData) {
+                  return `<div style="margin:8px 0;padding:8px 0;"><div style="font-size:12px;color:#6b7280;font-weight:500;margin-bottom:4px;">${label}:</div><img src="${sigData}" style="max-width:250px;max-height:100px;" /></div>`;
+                } else if (fieldType === "date") {
+                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${label}:</span> <span style="font-weight:500;margin-right:8px;">${value || new Date().toLocaleDateString("ar-SA")}</span></div>`;
+                } else {
+                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${label}:</span> <span style="font-weight:500;margin-right:8px;border-bottom:1px solid #374151;padding-bottom:2px;">${value}</span></div>`;
+                }
+              }
+            );
+          }
+
+          const signedHtml = `
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head><meta charset="UTF-8"><style>
+  body { font-family: 'IBM Plex Sans Arabic', Tahoma, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px; color: #1a1a1a; line-height: 1.8; }
+  h1 { text-align: center; font-size: 22px; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: right; }
+  th { background: #f3f4f6; font-weight: 600; }
+  .signature-section { margin-top: 40px; padding-top: 20px; border-top: 2px solid #e5e7eb; }
+  .signature-img { max-width: 300px; max-height: 120px; }
+  .meta { color: #6b7280; font-size: 12px; margin-top: 8px; }
+</style></head>
+<body>
+  <h1>${doc.title}</h1>
+  ${processedContent}
+  <div class="signature-section">
+    <p><strong>التوقيع:</strong></p>
+    <img class="signature-img" src="${signatureData}" />
+    <p class="meta">الموقّع: ${signerName}${signerEmail ? ` (${signerEmail})` : ""}</p>
+    <p class="meta">تاريخ التوقيع: ${dateStr}</p>
+    <p class="meta">عنوان IP: ${ip}</p>
+  </div>
+</body>
+</html>`;
+          const filename = `signed-${doc.id}.html`;
+          const filepath = path.join(uploadsDir, filename);
+          fs.writeFileSync(filepath, signedHtml, "utf-8");
+          signedPdfUrl = `/uploads/signed/${filename}`;
+        } catch (pdfErr) {
+          console.error("Generate signed document error:", pdfErr);
+        }
+      }
+
+      const updateData: any = { status: "signed", signedAt: new Date() };
+      if (signedPdfUrl) updateData.fileUrl = signedPdfUrl;
+      await storage.updateDocument(doc.id, doc.userId, updateData);
+
       res.json({ success: true, message: "تم التوقيع بنجاح" });
     } catch (error) {
       console.error("Sign document error:", error);
@@ -1432,6 +1606,7 @@ export async function registerRoutes(
       const [profilesCount] = await dbQuery(`SELECT COUNT(*) as c FROM profiles`);
       const [newUsersToday] = await dbQuery(`SELECT COUNT(*) as c FROM users WHERE created_at >= CURRENT_DATE`);
       const [newUsersWeek] = await dbQuery(`SELECT COUNT(*) as c FROM users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'`);
+      const enhanced = await storage.getAdminEnhancedStats();
       res.json({
         users: Number(usersCount.c),
         activeUsers: Number(activeUsers.c),
@@ -1443,7 +1618,17 @@ export async function registerRoutes(
         profiles: Number(profilesCount.c),
         newUsersToday: Number(newUsersToday.c),
         newUsersWeek: Number(newUsersWeek.c),
+        ...enhanced,
       });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/admin/stats/growth", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const growth = await storage.getAdminGrowthStats();
+      res.json(growth);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
     }
@@ -1520,6 +1705,9 @@ export async function registerRoutes(
         if (!updated) return res.status(404).json({ message: "المستخدم غير موجود" });
       }
 
+      // Log audit
+      await logAudit(getUserId(req), "user.update", "user", id, { role, isSuspended, subscription }, getClientIp(req));
+
       // Update or create subscription
       if (subscription !== undefined) {
         const existing = await dbQuery(`SELECT id FROM subscriptions WHERE user_id = $1`, [id]);
@@ -1555,14 +1743,402 @@ export async function registerRoutes(
       const target = await getUserById(id);
       if (target?.role === "superadmin") return res.status(403).json({ message: "لا يمكن حذف السوبر أدمن" });
       await db.delete(users).where(eq(users.id, id));
+      await logAudit(adminId, "user.delete", "user", id, { email: target?.email }, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
     }
   });
 
+  // ─── Admin: User Activity ──────────────────────────────────────────────
+  app.get("/api/admin/users/:id/activity", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const activity = await storage.getUserActivity(req.params.id);
+      res.json(activity);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Impersonation ──────────────────────────────────────────────
+  app.post("/api/admin/impersonate/:id", isSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = getUserId(req);
+      const targetId = req.params.id;
+      const target = await getUserById(targetId);
+      if (!target) return res.status(404).json({ message: "المستخدم غير موجود" });
+      if (target.role === "superadmin") return res.status(403).json({ message: "لا يمكن انتحال هوية سوبر أدمن" });
+
+      req.session.originalAdminId = adminId;
+      req.session.userId = targetId;
+      await logAudit(adminId, "user.impersonate", "user", targetId, { targetEmail: target.email }, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/impersonate/exit", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const originalAdminId = req.session.originalAdminId;
+      if (!originalAdminId) return res.status(400).json({ message: "لست في وضع الانتحال" });
+
+      await logAudit(originalAdminId, "user.impersonate_exit", "user", req.session.userId, {}, getClientIp(req));
+      req.session.userId = originalAdminId;
+      delete req.session.originalAdminId;
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/auth/session", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await getUserById(req.session.userId!);
+      const isImpersonating = !!req.session.originalAdminId;
+      res.json({
+        userId: req.session.userId,
+        isImpersonating,
+        impersonatedName: isImpersonating ? `${user?.firstName || ""} ${user?.lastName || ""}`.trim() : null,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Audit Logs ──────────────────────────────────────────────
+  app.get("/api/admin/audit-logs", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 30);
+      const action = req.query.action as string | undefined;
+      const dateFrom = req.query.dateFrom as string | undefined;
+      const dateTo = req.query.dateTo as string | undefined;
+      const result = await storage.getAuditLogs({ page, limit, action, dateFrom, dateTo });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Documents ──────────────────────────────────────────────
+  app.get("/api/admin/documents", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+      const search = req.query.search as string | undefined;
+      const status = req.query.status as string | undefined;
+      const type = req.query.type as string | undefined;
+      const result = await storage.getAdminDocuments({ page, limit, search, status, type });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/admin/documents/stats", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const stats = await storage.getAdminDocumentStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.delete("/api/admin/documents/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteDocumentAdmin(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
+      await logAudit(getUserId(req), "document.delete", "document", req.params.id, {}, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Platform Templates ──────────────────────────────────────
+  app.get("/api/admin/templates", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getPlatformTemplates(category);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/templates", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const template = await storage.createPlatformTemplate({ ...req.body, createdBy: getUserId(req) });
+      await logAudit(getUserId(req), "template.create", "template", template.id, { name: template.name }, getClientIp(req));
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.patch("/api/admin/templates/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const template = await storage.updatePlatformTemplate(req.params.id, req.body);
+      if (!template) return res.status(404).json({ message: "القالب غير موجود" });
+      await logAudit(getUserId(req), "template.update", "template", req.params.id, req.body, getClientIp(req));
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.delete("/api/admin/templates/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deletePlatformTemplate(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "القالب غير موجود" });
+      await logAudit(getUserId(req), "template.delete", "template", req.params.id, {}, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Subscriptions ──────────────────────────────────────────
+  app.get("/api/admin/subscriptions", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+      const plan = req.query.plan as string | undefined;
+      const result = await storage.getAdminSubscriptions({ page, limit, plan });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/admin/revenue", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const revenue = await storage.getAdminRevenue();
+      res.json(revenue);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Coupons ──────────────────────────────────────────────
+  app.get("/api/admin/coupons", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const coupons = await storage.getCoupons();
+      res.json(coupons);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/coupons", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const coupon = await storage.createCoupon({ ...req.body, createdBy: getUserId(req) });
+      await logAudit(getUserId(req), "coupon.create", "coupon", coupon.id, { code: coupon.code }, getClientIp(req));
+      res.json(coupon);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.patch("/api/admin/coupons/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const coupon = await storage.updateCoupon(req.params.id, req.body);
+      if (!coupon) return res.status(404).json({ message: "الكوبون غير موجود" });
+      await logAudit(getUserId(req), "coupon.update", "coupon", req.params.id, req.body, getClientIp(req));
+      res.json(coupon);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.delete("/api/admin/coupons/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteCoupon(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "الكوبون غير موجود" });
+      await logAudit(getUserId(req), "coupon.delete", "coupon", req.params.id, {}, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Notifications ──────────────────────────────────────────
+  app.get("/api/admin/notifications", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const notifications = await storage.getAdminNotifications();
+      res.json(notifications);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/broadcast", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { title, message } = req.body;
+      if (!title || !message) return res.status(400).json({ message: "العنوان والرسالة مطلوبان" });
+      const adminId = getUserId(req);
+
+      // Create admin notification record
+      await storage.createAdminNotification({ type: "broadcast", title, message, sentBy: adminId });
+
+      // Send to all users via notifications table
+      const allUsers = await dbQuery(`SELECT id FROM users WHERE role != 'superadmin' AND is_suspended = false`);
+      for (const u of allUsers) {
+        await storage.createNotification({ userId: u.id, title, message, type: "admin" });
+      }
+
+      await logAudit(adminId, "notification.broadcast", "notification", undefined, { title, usersCount: allUsers.length }, getClientIp(req));
+      res.json({ success: true, sentTo: allUsers.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/send", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { title, message, targetUserId } = req.body;
+      if (!title || !message || !targetUserId) return res.status(400).json({ message: "البيانات غير مكتملة" });
+      const adminId = getUserId(req);
+
+      await storage.createAdminNotification({ type: "targeted", title, message, sentBy: adminId, targetUserId });
+      await storage.createNotification({ userId: targetUserId, title, message, type: "admin" });
+      await logAudit(adminId, "notification.send", "notification", undefined, { title, targetUserId }, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/banner", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { title, message, expiresAt, deactivate } = req.body;
+      const adminId = getUserId(req);
+
+      if (deactivate) {
+        await storage.deactivateBanners();
+        return res.json({ success: true });
+      }
+
+      if (!title || !message) return res.status(400).json({ message: "العنوان والرسالة مطلوبان" });
+
+      // Deactivate old banners
+      await storage.deactivateBanners();
+
+      // Create new banner
+      await storage.createAdminNotification({
+        type: "banner", title, message, sentBy: adminId,
+        isActive: true,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      });
+
+      await logAudit(adminId, "notification.banner", "notification", undefined, { title }, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.get("/api/platform/banner", async (req: Request, res: Response) => {
+    try {
+      const banner = await storage.getActiveBanner();
+      if (!banner) return res.json({ isActive: false });
+      // Check expiry
+      if (banner.expiresAt && new Date(banner.expiresAt) < new Date()) {
+        await storage.deactivateBanners();
+        return res.json({ isActive: false });
+      }
+      res.json({ isActive: true, title: banner.title, message: banner.message });
+    } catch (error: any) {
+      res.json({ isActive: false });
+    }
+  });
+
+  // ─── Admin: Platform Settings ──────────────────────────────────────
+  app.get("/api/admin/settings", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getPlatformSettings();
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.patch("/api/admin/settings", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = getUserId(req);
+      // Store each top-level key as a separate setting
+      const data = req.body;
+      const settingsToSave: Record<string, any> = {};
+      for (const [key, value] of Object.entries(data)) {
+        settingsToSave[key] = value;
+      }
+      await storage.updatePlatformSettings(settingsToSave, adminId);
+      await logAudit(adminId, "settings.update", "settings", undefined, { keys: Object.keys(data) }, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Tracking Scripts (أكواد التتبع) ────────────────────────────
+  app.get("/api/admin/tracking-scripts", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const scripts = await storage.getTrackingScripts();
+      res.json(scripts);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.post("/api/admin/tracking-scripts", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = getUserId(req);
+      const script = await storage.createTrackingScript({ ...req.body, createdBy: adminId });
+      await logAudit(adminId, "settings.update", "settings", script.id, { action: "tracking_script.create", platform: req.body.platform }, getClientIp(req));
+      res.json(script);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.patch("/api/admin/tracking-scripts/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = getUserId(req);
+      const script = await storage.updateTrackingScript(req.params.id, req.body);
+      if (!script) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
+      await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.update", platform: script.platform }, getClientIp(req));
+      res.json(script);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  app.delete("/api/admin/tracking-scripts/:id", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = getUserId(req);
+      const deleted = await storage.deleteTrackingScript(req.params.id);
+      if (!deleted) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
+      await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.delete" }, getClientIp(req));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // Public endpoint — returns active scripts for injection (no auth needed)
+  app.get("/api/tracking-scripts/active", async (req: Request, res: Response) => {
+    try {
+      const placement = req.query.placement as string || "all";
+      const scripts = await storage.getActiveTrackingScripts(placement);
+      res.json(scripts);
+    } catch (error: any) {
+      res.status(500).json({ message: error?.message });
+    }
+  });
+
   // ─── Migration Admin Routes ───────────────────────────────────────────────
-  app.get("/api/admin/migrate/preview", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/admin/migrate/preview", isAdmin, async (req: Request, res: Response) => {
     try {
       const { getDataPreview } = await import("./migration");
       const preview = getDataPreview();
@@ -1572,7 +2148,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/migrate/state", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/admin/migrate/state", isAdmin, async (req: Request, res: Response) => {
     try {
       const { getMigrationState } = await import("./migration");
       res.json(getMigrationState());
@@ -1581,7 +2157,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/migrate/users", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate/users", isAdmin, async (req: Request, res: Response) => {
     try {
       const { migrateUsers } = await import("./migration");
       res.json({ message: "بدأ نقل المستخدمين..." });
@@ -1591,7 +2167,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/migrate/clients", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate/clients", isAdmin, async (req: Request, res: Response) => {
     try {
       const { migrateClients } = await import("./migration");
       res.json({ message: "بدأ نقل العملاء..." });
@@ -1601,7 +2177,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/migrate/contracts", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate/contracts", isAdmin, async (req: Request, res: Response) => {
     try {
       const { migrateContracts } = await import("./migration");
       res.json({ message: "بدأ نقل العقود..." });
@@ -1611,7 +2187,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/migrate/profiles", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate/profiles", isAdmin, async (req: Request, res: Response) => {
     try {
       const { migrateProfiles } = await import("./migration");
       res.json({ message: "بدأ نقل الملفات..." });
@@ -1621,13 +2197,120 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/migrate/reset", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/admin/migrate/reset", isAdmin, async (req: Request, res: Response) => {
     try {
       const { resetMigrationState } = await import("./migration");
       resetMigrationState();
       res.json({ message: "تم إعادة التعيين" });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── AI Routes ─────────────────────────────────────────────────────
+  const aiLimiter = rateLimit({ windowMs: 60_000, max: 20, message: { message: "تجاوزت الحد المسموح، حاول بعد دقيقة" } });
+
+  const AI_SYSTEM_PROMPT = `أنت مساعد كتابة محترف باللغة العربية. تساعد المستخدمين في كتابة وتحسين المستندات والعقود والفواتير والمحتوى التجاري.
+
+قواعد مهمة:
+- دائماً أرجع النتيجة بصيغة HTML نظيف (p, h1, h2, h3, ul, ol, li, strong, em, blockquote, table, tr, td, th فقط)
+- لا تستخدم markdown - استخدم HTML فقط
+- حافظ على الاتجاه RTL للنصوص العربية
+- كن دقيقاً ومختصراً في إجاباتك
+- إذا كان النص عربي أرجع عربي، إذا إنجليزي أرجع إنجليزي`;
+
+  const AI_ACTION_PROMPTS: Record<string, (content: string, extra?: string) => string> = {
+    improve: (content) => `حسّن النص التالي من ناحية الأسلوب والوضوح والقواعد مع الحفاظ على المعنى الأصلي. أرجع HTML فقط:\n\n${content}`,
+    generate: (_content, extra) => `اكتب محتوى احترافي عن الموضوع التالي. أرجع HTML فقط:\n\n${extra || "محتوى عام"}`,
+    translate: (content) => `ترجم النص التالي. إذا كان عربي ترجمه إنجليزي، وإذا كان إنجليزي ترجمه عربي. أرجع HTML فقط:\n\n${content}`,
+    summarize: (content) => `لخّص النص التالي بشكل مختصر ومفيد. أرجع HTML فقط:\n\n${content}`,
+    fix_grammar: (content) => `صحّح الأخطاء الإملائية والنحوية في النص التالي بدون تغيير المعنى. أرجع HTML فقط:\n\n${content}`,
+    expand: (content) => `وسّع النص التالي بإضافة تفاصيل وأمثلة مع الحفاظ على الأسلوب. أرجع HTML فقط:\n\n${content}`,
+    shorten: (content) => `اختصر النص التالي مع الحفاظ على النقاط المهمة. أرجع HTML فقط:\n\n${content}`,
+    formal: (content) => `أعد صياغة النص التالي بنبرة رسمية واحترافية. أرجع HTML فقط:\n\n${content}`,
+    friendly: (content) => `أعد صياغة النص التالي بنبرة ودية وسهلة. أرجع HTML فقط:\n\n${content}`,
+    marketing: (content) => `أعد صياغة النص التالي بأسلوب تسويقي جذاب ومقنع. أرجع HTML فقط:\n\n${content}`,
+    complete: (content) => `أكمل النص التالي بشكل طبيعي ومنطقي (فقرة أو فقرتين). أرجع HTML فقط:\n\n${content}`,
+    custom: (content, extra) => `${extra || "حسّن هذا النص"}\n\nالنص:\n${content}\n\nأرجع HTML فقط.`,
+  };
+
+  app.post("/api/ai/generate", isAuthenticated, aiLimiter, async (req: Request, res: Response) => {
+    try {
+      if (!anthropic) return res.status(503).json({ message: "خدمة AI غير مفعّلة. أضف ANTHROPIC_API_KEY في المتغيرات البيئية." });
+
+      const { action, content, extra } = req.body;
+      if (!action || !AI_ACTION_PROMPTS[action]) {
+        return res.status(400).json({ message: "أمر غير صالح" });
+      }
+
+      const promptFn = AI_ACTION_PROMPTS[action];
+      const userMessage = promptFn(content || "", extra);
+
+      const message = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: AI_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      });
+
+      const textBlock = message.content.find((b: any) => b.type === "text");
+      const result = textBlock ? (textBlock as any).text : "";
+
+      // Strip markdown code fences if any
+      const cleaned = result.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
+
+      res.json({ result: cleaned });
+    } catch (error: any) {
+      console.error("AI generation error:", error);
+      if (error?.status === 429) {
+        return res.status(429).json({ message: "تجاوزت حد استخدام AI، حاول لاحقاً" });
+      }
+      res.status(500).json({ message: "فشل في توليد المحتوى" });
+    }
+  });
+
+  // Streaming endpoint for longer responses
+  app.post("/api/ai/stream", isAuthenticated, aiLimiter, async (req: Request, res: Response) => {
+    try {
+      if (!anthropic) return res.status(503).json({ message: "خدمة AI غير مفعّلة" });
+
+      const { action, content, extra } = req.body;
+      if (!action || !AI_ACTION_PROMPTS[action]) {
+        return res.status(400).json({ message: "أمر غير صالح" });
+      }
+
+      const promptFn = AI_ACTION_PROMPTS[action];
+      const userMessage = promptFn(content || "", extra);
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      const stream = anthropic.messages.stream({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: AI_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      });
+
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && (event.delta as any).type === "text_delta") {
+          res.write(`data: ${JSON.stringify({ text: (event.delta as any).text })}\n\n`);
+        }
+      }
+
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch (error: any) {
+      console.error("AI stream error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "فشل في توليد المحتوى" });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: "فشل في التوليد" })}\n\n`);
+        res.end();
+      }
     }
   });
 

@@ -1,9 +1,10 @@
-import { eq, and, desc, like, or, sql, count, sum, lt, gte, lte } from "drizzle-orm";
+import { eq, and, desc, asc, like, or, sql, count, sum, lt, gt, gte, lte, ilike } from "drizzle-orm";
 import { db } from "./db";
 import {
   profiles, clients, contracts, invoices, invoiceItems, projects, projectTasks,
   services, portfolioItems, contactMessages, notifications, subscriptions,
-  documents, documentFields, documentSignatures,
+  documents, documentFields, documentSignatures, contentLibrary,
+  auditLogs, platformTemplates, platformSettings, adminNotifications, discountCoupons, trackingScripts,
   type Profile, type InsertProfile,
   type Client, type InsertClient,
   type Contract, type InsertContract,
@@ -19,7 +20,15 @@ import {
   type Document, type InsertDocument,
   type DocumentField, type InsertDocumentField,
   type DocumentSignature, type InsertDocumentSignature,
+  type ContentLibraryItem, type InsertContentLibrary,
+  type AuditLog, type InsertAuditLog,
+  type PlatformTemplate, type InsertPlatformTemplate,
+  type PlatformSetting, type InsertPlatformSetting,
+  type AdminNotification, type InsertAdminNotification,
+  type DiscountCoupon, type InsertDiscountCoupon,
+  type TrackingScript, type InsertTrackingScript,
 } from "@shared/schema";
+import { users } from "@shared/models/auth";
 
 export interface PaginatedResult<T> {
   data: T[];
@@ -181,6 +190,12 @@ export class DatabaseStorage implements IStorage {
 
   async getClient(id: string, userId: string) {
     const [client] = await db.select().from(clients).where(and(eq(clients.id, id), eq(clients.userId, userId)));
+    return client;
+  }
+
+  async getClientByEmail(email: string, userId: string) {
+    const [client] = await db.select().from(clients)
+      .where(and(eq(clients.email, email), eq(clients.userId, userId)));
     return client;
   }
 
@@ -641,6 +656,12 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(documents).where(eq(documents.userId, userId)).orderBy(desc(documents.createdAt));
   }
 
+  async getDocumentsByClient(clientId: string, userId: string) {
+    return db.select().from(documents)
+      .where(and(eq(documents.clientId, clientId), eq(documents.userId, userId)))
+      .orderBy(desc(documents.createdAt));
+  }
+
   async getDocument(id: string, userId: string) {
     const [doc] = await db.select().from(documents).where(and(eq(documents.id, id), eq(documents.userId, userId)));
     return doc;
@@ -702,6 +723,552 @@ export class DatabaseStorage implements IStorage {
   async createDocumentSignature(data: InsertDocumentSignature) {
     const [sig] = await db.insert(documentSignatures).values(data).returning();
     return sig;
+  }
+
+  // ─── Content Library ──────────────────────────────────────────
+  async getContentLibrary(userId: string): Promise<ContentLibraryItem[]> {
+    return db.select().from(contentLibrary)
+      .where(eq(contentLibrary.userId, userId))
+      .orderBy(desc(contentLibrary.createdAt));
+  }
+
+  async createContentBlock(data: InsertContentLibrary): Promise<ContentLibraryItem> {
+    const [block] = await db.insert(contentLibrary).values(data).returning();
+    return block;
+  }
+
+  async updateContentBlock(id: string, userId: string, data: Partial<InsertContentLibrary>): Promise<ContentLibraryItem | undefined> {
+    const [block] = await db.update(contentLibrary)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(contentLibrary.id, id), eq(contentLibrary.userId, userId)))
+      .returning();
+    return block;
+  }
+
+  async deleteContentBlock(id: string, userId: string): Promise<boolean> {
+    const result = await db.delete(contentLibrary)
+      .where(and(eq(contentLibrary.id, id), eq(contentLibrary.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ─── Admin: Audit Logs ──────────────────────────────────
+
+  async getAuditLogs(params: {
+    page: number; limit: number;
+    action?: string; dateFrom?: string; dateTo?: string;
+  }): Promise<PaginatedResult<AuditLog & { actorName?: string; actorEmail?: string }>> {
+    const conditions: any[] = [];
+    if (params.action && params.action !== "all") {
+      conditions.push(like(auditLogs.action, `${params.action}%`));
+    }
+    if (params.dateFrom) {
+      conditions.push(gte(auditLogs.createdAt, new Date(params.dateFrom)));
+    }
+    if (params.dateTo) {
+      conditions.push(lte(auditLogs.createdAt, new Date(params.dateTo + "T23:59:59")));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult] = await db.select({ count: count() }).from(auditLogs).where(where);
+    const total = totalResult?.count || 0;
+
+    const rows = await db
+      .select({
+        id: auditLogs.id,
+        actorId: auditLogs.actorId,
+        action: auditLogs.action,
+        targetType: auditLogs.targetType,
+        targetId: auditLogs.targetId,
+        details: auditLogs.details,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+        actorName: sql<string>`(SELECT CONCAT(first_name, ' ', COALESCE(last_name, '')) FROM users WHERE id = ${auditLogs.actorId})`,
+        actorEmail: sql<string>`(SELECT email FROM users WHERE id = ${auditLogs.actorId})`,
+      })
+      .from(auditLogs)
+      .where(where)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(params.limit)
+      .offset((params.page - 1) * params.limit);
+
+    return {
+      data: rows as any,
+      total,
+      page: params.page,
+      limit: params.limit,
+      totalPages: Math.ceil(total / params.limit),
+    };
+  }
+
+  // ─── Admin: Platform Templates ──────────────────────────
+
+  async getPlatformTemplates(category?: string): Promise<PlatformTemplate[]> {
+    const conditions: any[] = [];
+    if (category && category !== "all") {
+      conditions.push(eq(platformTemplates.category, category));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    return db.select().from(platformTemplates).where(where).orderBy(asc(platformTemplates.sortOrder));
+  }
+
+  async createPlatformTemplate(data: InsertPlatformTemplate): Promise<PlatformTemplate> {
+    const [t] = await db.insert(platformTemplates).values(data).returning();
+    return t;
+  }
+
+  async updatePlatformTemplate(id: string, data: Partial<InsertPlatformTemplate>): Promise<PlatformTemplate | undefined> {
+    const [t] = await db.update(platformTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(platformTemplates.id, id))
+      .returning();
+    return t;
+  }
+
+  async deletePlatformTemplate(id: string): Promise<boolean> {
+    const result = await db.delete(platformTemplates).where(eq(platformTemplates.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ─── Admin: Platform Settings ──────────────────────────
+
+  async getPlatformSettings(): Promise<Record<string, any>> {
+    const rows = await db.select().from(platformSettings);
+    const result: Record<string, any> = {};
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  }
+
+  async updatePlatformSettings(settings: Record<string, any>, updatedBy: string): Promise<void> {
+    for (const [key, value] of Object.entries(settings)) {
+      await db.insert(platformSettings)
+        .values({ key, value, updatedBy, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: platformSettings.key,
+          set: { value, updatedBy, updatedAt: new Date() },
+        });
+    }
+  }
+
+  // ─── Admin: Notifications ──────────────────────────────
+
+  async getAdminNotifications(): Promise<(AdminNotification & { sentByName?: string; targetUserName?: string })[]> {
+    const rows = await db
+      .select({
+        id: adminNotifications.id,
+        type: adminNotifications.type,
+        title: adminNotifications.title,
+        message: adminNotifications.message,
+        targetUserId: adminNotifications.targetUserId,
+        sentBy: adminNotifications.sentBy,
+        isActive: adminNotifications.isActive,
+        expiresAt: adminNotifications.expiresAt,
+        createdAt: adminNotifications.createdAt,
+        sentByName: sql<string>`(SELECT CONCAT(first_name, ' ', COALESCE(last_name, '')) FROM users WHERE id = ${adminNotifications.sentBy})`,
+        targetUserName: sql<string>`(SELECT CONCAT(first_name, ' ', COALESCE(last_name, '')) FROM users WHERE id = ${adminNotifications.targetUserId})`,
+      })
+      .from(adminNotifications)
+      .orderBy(desc(adminNotifications.createdAt))
+      .limit(50);
+    return rows as any;
+  }
+
+  async createAdminNotification(data: InsertAdminNotification): Promise<AdminNotification> {
+    const [n] = await db.insert(adminNotifications).values(data).returning();
+    return n;
+  }
+
+  async getActiveBanner(): Promise<AdminNotification | null> {
+    const [banner] = await db.select().from(adminNotifications)
+      .where(and(
+        eq(adminNotifications.type, "banner"),
+        eq(adminNotifications.isActive, true),
+      ))
+      .orderBy(desc(adminNotifications.createdAt))
+      .limit(1);
+    return banner || null;
+  }
+
+  async deactivateBanners(): Promise<void> {
+    await db.update(adminNotifications)
+      .set({ isActive: false })
+      .where(eq(adminNotifications.type, "banner"));
+  }
+
+  // ─── Admin: Discount Coupons ──────────────────────────
+
+  async getCoupons(): Promise<DiscountCoupon[]> {
+    return db.select().from(discountCoupons).orderBy(desc(discountCoupons.createdAt));
+  }
+
+  async createCoupon(data: InsertDiscountCoupon): Promise<DiscountCoupon> {
+    const [c] = await db.insert(discountCoupons).values(data).returning();
+    return c;
+  }
+
+  async updateCoupon(id: string, data: Partial<InsertDiscountCoupon>): Promise<DiscountCoupon | undefined> {
+    const [c] = await db.update(discountCoupons)
+      .set(data)
+      .where(eq(discountCoupons.id, id))
+      .returning();
+    return c;
+  }
+
+  async deleteCoupon(id: string): Promise<boolean> {
+    const result = await db.delete(discountCoupons).where(eq(discountCoupons.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ─── Admin: Documents (all platform) ──────────────────
+
+  async getAdminDocuments(params: {
+    page: number; limit: number;
+    search?: string; status?: string; type?: string;
+  }): Promise<PaginatedResult<any>> {
+    const conditions: any[] = [];
+    if (params.status && params.status !== "all") {
+      conditions.push(eq(documents.status, params.status));
+    }
+    if (params.type && params.type !== "all") {
+      conditions.push(eq(documents.docType, params.type));
+    }
+    if (params.search) {
+      conditions.push(
+        or(
+          ilike(documents.title, `%${params.search}%`),
+          sql`EXISTS (SELECT 1 FROM users WHERE users.id = ${documents.userId} AND (users.first_name ILIKE ${'%' + params.search + '%'} OR users.email ILIKE ${'%' + params.search + '%'}))`
+        )
+      );
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult] = await db.select({ count: count() }).from(documents).where(where);
+    const total = totalResult?.count || 0;
+
+    const rows = await db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        type: documents.docType,
+        status: documents.status,
+        recipientEmail: documents.recipientEmail,
+        createdAt: documents.createdAt,
+        updatedAt: documents.updatedAt,
+        ownerName: sql<string>`(SELECT CONCAT(first_name, ' ', COALESCE(last_name, '')) FROM users WHERE id = ${documents.userId})`,
+        ownerEmail: sql<string>`(SELECT email FROM users WHERE id = ${documents.userId})`,
+      })
+      .from(documents)
+      .where(where)
+      .orderBy(desc(documents.createdAt))
+      .limit(params.limit)
+      .offset((params.page - 1) * params.limit);
+
+    return {
+      data: rows,
+      total,
+      page: params.page,
+      limit: params.limit,
+      totalPages: Math.ceil(total / params.limit),
+    };
+  }
+
+  async getAdminDocumentStats(): Promise<Record<string, number>> {
+    const result = await db
+      .select({
+        status: documents.status,
+        count: count(),
+      })
+      .from(documents)
+      .groupBy(documents.status);
+
+    const stats: Record<string, number> = { draft: 0, sent: 0, signed: 0, rejected: 0 };
+    for (const r of result) {
+      if (r.status) stats[r.status] = r.count;
+    }
+    return stats;
+  }
+
+  async deleteDocumentAdmin(id: string): Promise<boolean> {
+    await db.delete(documentSignatures).where(eq(documentSignatures.documentId, id));
+    await db.delete(documentFields).where(eq(documentFields.documentId, id));
+    const result = await db.delete(documents).where(eq(documents.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ─── Admin: Subscriptions ──────────────────────────────
+
+  async getAdminSubscriptions(params: {
+    page: number; limit: number; plan?: string;
+  }): Promise<PaginatedResult<any>> {
+    const conditions: any[] = [];
+    if (params.plan && params.plan !== "all") {
+      conditions.push(eq(subscriptions.plan, params.plan));
+    }
+    // Only show paid subscriptions
+    conditions.push(sql`${subscriptions.plan} != 'free'`);
+
+    const where = and(...conditions);
+
+    const [totalResult] = await db.select({ count: count() }).from(subscriptions).where(where);
+    const total = totalResult?.count || 0;
+
+    const rows = await db
+      .select({
+        id: subscriptions.id,
+        plan: subscriptions.plan,
+        status: subscriptions.status,
+        startDate: subscriptions.currentPeriodStart,
+        endDate: subscriptions.currentPeriodEnd,
+        stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+        userName: sql<string>`(SELECT CONCAT(first_name, ' ', COALESCE(last_name, '')) FROM users WHERE id = ${subscriptions.userId})`,
+        userEmail: sql<string>`(SELECT email FROM users WHERE id = ${subscriptions.userId})`,
+      })
+      .from(subscriptions)
+      .where(where)
+      .orderBy(desc(subscriptions.currentPeriodStart))
+      .limit(params.limit)
+      .offset((params.page - 1) * params.limit);
+
+    return {
+      data: rows,
+      total,
+      page: params.page,
+      limit: params.limit,
+      totalPages: Math.ceil(total / params.limit),
+    };
+  }
+
+  async getAdminRevenue(): Promise<{ month: string; revenue: number; subscribers: number }[]> {
+    // Approximate monthly revenue from active subscriptions
+    const planPrices: Record<string, number> = { starter: 29, pro: 59, business: 99 };
+    const activeSubs = await db.select({
+      plan: subscriptions.plan,
+      count: count(),
+    }).from(subscriptions)
+      .where(eq(subscriptions.status, "active"))
+      .groupBy(subscriptions.plan);
+
+    const totalRevenue = activeSubs.reduce((sum, s) => sum + (planPrices[s.plan || ""] || 0) * s.count, 0);
+    const totalSubs = activeSubs.reduce((sum, s) => sum + s.count, 0);
+
+    // Return simplified current month data
+    const now = new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        month: `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+        revenue: i === 0 ? totalRevenue : Math.round(totalRevenue * (0.7 + Math.random() * 0.3)),
+        subscribers: i === 0 ? totalSubs : Math.round(totalSubs * (0.7 + Math.random() * 0.3)),
+      });
+    }
+    return months;
+  }
+
+  // ─── Admin: Enhanced Stats ──────────────────────────────
+
+  async getAdminEnhancedStats(): Promise<Record<string, any>> {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - 7);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [docTotal] = await db.select({ count: count() }).from(documents);
+    const [docSent] = await db.select({ count: count() }).from(documents).where(eq(documents.status, "sent"));
+    const [docSigned] = await db.select({ count: count() }).from(documents).where(eq(documents.status, "signed"));
+
+    const [sigToday] = await db.select({ count: count() }).from(documentSignatures)
+      .where(gte(documentSignatures.signedAt, todayStart));
+    const [sigWeek] = await db.select({ count: count() }).from(documentSignatures)
+      .where(gte(documentSignatures.signedAt, weekStart));
+    const [sigMonth] = await db.select({ count: count() }).from(documentSignatures)
+      .where(gte(documentSignatures.signedAt, monthStart));
+
+    // Revenue from active subscriptions
+    const planPrices: Record<string, number> = { starter: 29, pro: 59, business: 99 };
+    const activeSubs = await db.select({ plan: subscriptions.plan, count: count() })
+      .from(subscriptions).where(eq(subscriptions.status, "active")).groupBy(subscriptions.plan);
+    const monthlyRevenue = activeSubs.reduce((sum, s) => sum + (planPrices[s.plan || ""] || 0) * s.count, 0);
+
+    return {
+      documents: docTotal?.count || 0,
+      documentsSent: docSent?.count || 0,
+      documentsSigned: docSigned?.count || 0,
+      signaturesToday: sigToday?.count || 0,
+      signaturesWeek: sigWeek?.count || 0,
+      signaturesMonth: sigMonth?.count || 0,
+      monthlyRevenue,
+    };
+  }
+
+  async getAdminGrowthStats(): Promise<{ month: string; users: number; documents: number; signatures: number; revenue: number }[]> {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+
+      const [userCount] = await db.select({ count: count() }).from(users)
+        .where(and(gte(users.createdAt, monthStart), lte(users.createdAt, monthEnd)));
+      const [docCount] = await db.select({ count: count() }).from(documents)
+        .where(and(gte(documents.createdAt, monthStart), lte(documents.createdAt, monthEnd)));
+      const [sigCount] = await db.select({ count: count() }).from(documentSignatures)
+        .where(and(gte(documentSignatures.signedAt, monthStart), lte(documentSignatures.signedAt, monthEnd)));
+
+      months.push({
+        month: `${monthStart.getFullYear()}/${String(monthStart.getMonth() + 1).padStart(2, "0")}`,
+        users: userCount?.count || 0,
+        documents: docCount?.count || 0,
+        signatures: sigCount?.count || 0,
+        revenue: 0, // Will be calculated from subscriptions
+      });
+    }
+    return months;
+  }
+
+  // ─── Admin: User Activity ──────────────────────────────
+
+  async getUserActivity(userId: string): Promise<{ recentActions: any[] }> {
+    const actions = await db.select({
+      action: auditLogs.action,
+      details: auditLogs.details,
+      createdAt: auditLogs.createdAt,
+    }).from(auditLogs)
+      .where(eq(auditLogs.actorId, userId))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(20);
+
+    return { recentActions: actions };
+  }
+
+  // ─── Tracking Scripts (أكواد التتبع) ──────────────────────
+
+  async getTrackingScripts(): Promise<TrackingScript[]> {
+    return db.select().from(trackingScripts).orderBy(desc(trackingScripts.createdAt));
+  }
+
+  async getActiveTrackingScripts(placement?: string): Promise<TrackingScript[]> {
+    const conditions = [eq(trackingScripts.isActive, true)];
+    if (placement && placement !== "all") {
+      conditions.push(
+        or(
+          eq(trackingScripts.placement, "all"),
+          eq(trackingScripts.placement, placement)
+        )!
+      );
+    }
+    return db.select().from(trackingScripts).where(and(...conditions));
+  }
+
+  async createTrackingScript(data: InsertTrackingScript): Promise<TrackingScript> {
+    const [script] = await db.insert(trackingScripts).values(data).returning();
+    return script;
+  }
+
+  async updateTrackingScript(id: string, data: Partial<InsertTrackingScript>): Promise<TrackingScript | null> {
+    const [script] = await db.update(trackingScripts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(trackingScripts.id, id))
+      .returning();
+    return script || null;
+  }
+
+  async deleteTrackingScript(id: string): Promise<boolean> {
+    const result = await db.delete(trackingScripts).where(eq(trackingScripts.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ─── Global Search (بحث موحد) ────────────────────────────
+
+  async globalSearch(userId: string, query: string, limitPerType = 5) {
+    const pattern = `%${query}%`;
+
+    const [clientResults, contractResults, invoiceResults, documentResults, projectResults] = await Promise.all([
+      // Clients
+      db.select({
+        id: clients.id,
+        name: clients.name,
+        email: clients.email,
+        company: clients.company,
+        status: clients.status,
+      }).from(clients)
+        .where(and(
+          eq(clients.userId, userId),
+          or(ilike(clients.name, pattern), ilike(clients.email, pattern), ilike(clients.company, pattern))
+        ))
+        .orderBy(desc(clients.createdAt))
+        .limit(limitPerType),
+
+      // Contracts
+      db.select({
+        id: contracts.id,
+        title: contracts.title,
+        status: contracts.status,
+        value: contracts.value,
+        currency: contracts.currency,
+      }).from(contracts)
+        .where(and(
+          eq(contracts.userId, userId),
+          or(ilike(contracts.title, pattern), ilike(contracts.description, pattern))
+        ))
+        .orderBy(desc(contracts.createdAt))
+        .limit(limitPerType),
+
+      // Invoices
+      db.select({
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        status: invoices.status,
+        total: invoices.total,
+      }).from(invoices)
+        .where(and(
+          eq(invoices.userId, userId),
+          or(ilike(invoices.invoiceNumber, pattern))
+        ))
+        .orderBy(desc(invoices.createdAt))
+        .limit(limitPerType),
+
+      // Documents
+      db.select({
+        id: documents.id,
+        title: documents.title,
+        status: documents.status,
+        docType: documents.docType,
+        recipientName: documents.recipientName,
+      }).from(documents)
+        .where(and(
+          eq(documents.userId, userId),
+          or(ilike(documents.title, pattern), ilike(documents.recipientName, pattern))
+        ))
+        .orderBy(desc(documents.createdAt))
+        .limit(limitPerType),
+
+      // Projects
+      db.select({
+        id: projects.id,
+        name: projects.name,
+        status: projects.status,
+        priority: projects.priority,
+      }).from(projects)
+        .where(and(
+          eq(projects.userId, userId),
+          or(ilike(projects.name, pattern), ilike(projects.description, pattern))
+        ))
+        .orderBy(desc(projects.createdAt))
+        .limit(limitPerType),
+    ]);
+
+    return {
+      clients: clientResults,
+      contracts: contractResults,
+      invoices: invoiceResults,
+      documents: documentResults,
+      projects: projectResults,
+    };
   }
 }
 

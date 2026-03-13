@@ -27,7 +27,11 @@ import DocumentEditor from "@/pages/document-editor";
 import SignDocument from "@/pages/sign-document";
 import TextDocumentEditor from "@/pages/text-document-editor";
 import AdminMigratePage from "@/pages/admin-migrate";
-import AdminDashboard from "@/pages/admin-dashboard";
+import AdminLayout from "@/pages/admin/admin-layout";
+import TemplatesGallery from "@/pages/templates-gallery";
+import ImpersonationBanner from "@/components/admin/impersonation-banner";
+import TrackingScriptsInjector from "@/components/tracking-scripts-injector";
+import GlobalSearch from "@/components/global-search";
 import { Loader2 } from "lucide-react";
 
 function AuthenticatedLayout() {
@@ -43,8 +47,10 @@ function AuthenticatedLayout() {
         <div className="flex flex-col flex-1 min-w-0">
           <header className="flex items-center justify-between gap-2 p-2 border-b sticky top-0 z-50 bg-background">
             <ThemeToggle />
+            <GlobalSearch />
             <SidebarTrigger data-testid="button-sidebar-toggle" />
           </header>
+          <ImpersonationBanner />
           <main className="flex-1 overflow-auto">
             <Switch>
               <Route path="/dashboard" component={Dashboard} />
@@ -55,11 +61,13 @@ function AuthenticatedLayout() {
               <Route path="/dashboard/my-page" component={MyPageManager} />
               <Route path="/dashboard/settings" component={SettingsPage} />
               <Route path="/dashboard/notifications" component={NotificationsPage} />
+              <Route path="/dashboard/templates">{() => <TemplatesGallery embedded />}</Route>
               <Route path="/dashboard/documents/text/:id" component={TextDocumentEditor} />
               <Route path="/dashboard/documents/(.*)" component={DocumentEditor} />
               <Route path="/dashboard/documents" component={DocumentsPage} />
               <Route path="/dashboard/admin/migrate" component={AdminMigratePage} />
-              <Route path="/dashboard/admin" component={AdminDashboard} />
+              <Route path="/dashboard/admin/(.*)" component={AdminLayout} />
+              <Route path="/dashboard/admin" component={AdminLayout} />
               <Route component={NotFound} />
             </Switch>
           </main>
@@ -83,6 +91,7 @@ function Router() {
   if (user) {
     return (
       <Switch>
+        <Route path="/templates" component={TemplatesGallery} />
         <Route path="/p/:username" component={PublicProfile} />
         <Route path="/sign/:token" component={SignDocument} />
         <Route path="/auth/reset-password" component={ResetPasswordPage} />
@@ -98,6 +107,7 @@ function Router() {
 
   return (
     <Switch>
+      <Route path="/templates" component={TemplatesGallery} />
       <Route path="/p/:username" component={PublicProfile} />
       <Route path="/sign/:token" component={SignDocument} />
       <Route path="/auth/reset-password" component={ResetPasswordPage} />
@@ -116,6 +126,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
+          <TrackingScriptsInjector />
           <Toaster />
           <Router />
         </TooltipProvider>
