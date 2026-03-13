@@ -47,7 +47,10 @@ export const clients = pgTable("clients", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_clients_user_id").on(table.userId)]);
+}, (table) => [
+  index("idx_clients_user_id").on(table.userId),
+  index("idx_clients_name").on(table.name),
+]);
 
 export const contracts = pgTable("contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -63,7 +66,10 @@ export const contracts = pgTable("contracts", {
   endDate: date("end_date"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_contracts_user_id").on(table.userId)]);
+}, (table) => [
+  index("idx_contracts_user_id").on(table.userId),
+  index("idx_contracts_title").on(table.title),
+]);
 
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -82,7 +88,10 @@ export const invoices = pgTable("invoices", {
   paidAt: timestamp("paid_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_invoices_user_id").on(table.userId)]);
+}, (table) => [
+  index("idx_invoices_user_id").on(table.userId),
+  index("idx_invoices_number").on(table.invoiceNumber),
+]);
 
 export const invoiceItems = pgTable("invoice_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -108,7 +117,10 @@ export const projects = pgTable("projects", {
   budget: decimal("budget", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_projects_user_id").on(table.userId)]);
+}, (table) => [
+  index("idx_projects_user_id").on(table.userId),
+  index("idx_projects_name").on(table.name),
+]);
 
 export const projectTasks = pgTable("project_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -200,7 +212,11 @@ export const documents = pgTable("documents", {
   signedAt: timestamp("signed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_documents_user_id").on(table.userId), index("idx_documents_share_token").on(table.shareToken)]);
+}, (table) => [
+  index("idx_documents_user_id").on(table.userId),
+  index("idx_documents_share_token").on(table.shareToken),
+  index("idx_documents_title").on(table.title),
+]);
 
 export const documentFields = pgTable("document_fields", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

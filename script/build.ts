@@ -13,6 +13,7 @@ const allowlist = [
   "drizzle-orm",
   "drizzle-zod",
   "express",
+  "compression",
   "express-rate-limit",
   "express-session",
   "jsonwebtoken",
@@ -52,6 +53,21 @@ async function buildAll() {
     bundle: true,
     format: "cjs",
     outfile: "dist/index.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
+
+  // Build cluster entry point for multi-core production
+  await esbuild({
+    entryPoints: ["server/cluster.ts"],
+    platform: "node",
+    bundle: false,
+    format: "cjs",
+    outfile: "dist/cluster.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
     },

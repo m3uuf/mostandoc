@@ -1,8 +1,10 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { pool } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -12,6 +14,16 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// ─── Gzip/Brotli compression (reduces response sizes by ~70%) ────
+app.use(compression({
+  level: 6,                     // balanced speed vs compression
+  threshold: 1024,              // only compress responses > 1KB
+  filter: (req, res) => {
+    if (req.headers["x-no-compression"]) return false;
+    return compression.filter(req, res);
+  },
+}));
 
 app.use(
   express.json({
@@ -95,4 +107,27 @@ app.use((req, res, next) => {
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
+
+  // ─── Graceful shutdown ───────────────────────────────────────────
+  const shutdown = async (signal: string) => {
+    log(`${signal} received, shutting down gracefully...`);
+    httpServer.close(async () => {
+      log("HTTP server closed");
+      try {
+        await pool.end();
+        log("Database pool closed");
+      } catch (err) {
+        console.error("Error closing pool:", err);
+      }
+      process.exit(0);
+    });
+    // Force exit after 10s if still hanging
+    setTimeout(() => {
+      console.error("Forced shutdown after 10s timeout");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();

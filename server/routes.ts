@@ -7,6 +7,8 @@ import { sql, eq } from "drizzle-orm";
 import { db, dbQuery } from "./db";
 import { users } from "@shared/models/auth";
 import { storage } from "./storage";
+import { cache, CACHE_TTL } from "./cache";
+import { pool } from "./db";
 import { setupCustomAuth, isAuthenticated, isAdmin, isSuperAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { logAudit, getClientIp } from "./audit";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -53,14 +55,41 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // ─── Health check endpoint ───────────────────────────────────────
+  app.get("/api/health", async (_req: Request, res: Response) => {
+    try {
+      const dbStart = Date.now();
+      await pool.query("SELECT 1");
+      const dbLatency = Date.now() - dbStart;
+      res.json({
+        status: "ok",
+        uptime: process.uptime(),
+        memory: process.memoryUsage().rss,
+        dbLatency,
+        poolTotal: pool.totalCount,
+        poolIdle: pool.idleCount,
+        poolWaiting: pool.waitingCount,
+        cacheStats: cache.stats(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      res.status(503).json({ status: "unhealthy", error: "database unreachable" });
+    }
+  });
+
   // Serve uploaded signed documents
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+  // ─── Smart rate limiting (per-user for authenticated, per-IP for public) ───
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 500,
+    max: 1000,                  // increased from 500 for power users
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => {
+      // Use user ID if authenticated, otherwise IP
+      return (req.session as any)?.userId || req.ip || "unknown";
+    },
     message: { message: "تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً." },
   });
 
@@ -70,6 +99,15 @@ export async function registerRoutes(
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: "تم تجاوز الحد المسموح من محاولات الدخول. حاول لاحقاً." },
+  });
+
+  const searchLimiter = rateLimit({
+    windowMs: 60 * 1000,       // 1 minute window
+    max: 30,                    // 30 searches per minute
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => (req.session as any)?.userId || req.ip || "unknown",
+    message: { message: "تم تجاوز حد البحث. حاول بعد دقيقة." },
   });
 
   const contactLimiter = rateLimit({
@@ -494,7 +532,7 @@ export async function registerRoutes(
   });
 
   // ─── Global Search (بحث موحد) ────────────────────────────────────
-  app.get("/api/search", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/search", searchLimiter, isAuthenticated, async (req: Request, res: Response) => {
     try {
       const q = (req.query.q as string || "").trim();
       if (!q || q.length < 2) {
@@ -2095,6 +2133,7 @@ export async function registerRoutes(
     try {
       const adminId = getUserId(req);
       const script = await storage.createTrackingScript({ ...req.body, createdBy: adminId });
+      cache.invalidate("tracking-scripts:*");
       await logAudit(adminId, "settings.update", "settings", script.id, { action: "tracking_script.create", platform: req.body.platform }, getClientIp(req));
       res.json(script);
     } catch (error: any) {
@@ -2107,6 +2146,7 @@ export async function registerRoutes(
       const adminId = getUserId(req);
       const script = await storage.updateTrackingScript(req.params.id, req.body);
       if (!script) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
+      cache.invalidate("tracking-scripts:*");
       await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.update", platform: script.platform }, getClientIp(req));
       res.json(script);
     } catch (error: any) {
@@ -2119,6 +2159,7 @@ export async function registerRoutes(
       const adminId = getUserId(req);
       const deleted = await storage.deleteTrackingScript(req.params.id);
       if (!deleted) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
+      cache.invalidate("tracking-scripts:*");
       await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.delete" }, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
@@ -2127,10 +2168,15 @@ export async function registerRoutes(
   });
 
   // Public endpoint — returns active scripts for injection (no auth needed)
+  // Cached for 30 minutes — rarely changes
   app.get("/api/tracking-scripts/active", async (req: Request, res: Response) => {
     try {
       const placement = req.query.placement as string || "all";
-      const scripts = await storage.getActiveTrackingScripts(placement);
+      const scripts = await cache.getOrSet(
+        `tracking-scripts:${placement}`,
+        CACHE_TTL.LONG,
+        () => storage.getActiveTrackingScripts(placement)
+      );
       res.json(scripts);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
