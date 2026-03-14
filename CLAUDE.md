@@ -141,8 +141,17 @@ Routes (`server/routes.ts`) → Storage (`server/storage.ts` via `IStorage` inte
 11. **Build output.** `dist/public/` (client), `dist/index.cjs` (server), `dist/cluster.cjs` (multi-worker). The build script is in `script/build.ts`.
 12. **Path aliases.** `@/` → `client/src/`, `@shared/` → `shared/` (configured in tsconfig.json and vite.config.ts).
 
-## Deployment
+## Hosting & Deployment
 
-- **Replit:** Primary platform. Uses `.replit` config, Node.js 20, PostgreSQL 16, autoscale deployment.
-- **Railway:** Uses `railway.json`. Build: `npm install && npm run build`. Health check at `/api/health`.
-- **Heroku:** Uses `Procfile` with cluster mode.
+**Production:** Railway at `app.mostandoc.com`
+- App and PostgreSQL database both hosted on Railway
+- Build: `npm install && npm run build`
+- Start: `npm run start:cluster` (multi-worker)
+- Health check: `/api/health`
+- Config: `railway.json`
+
+**History:** Project was originally built on Replit, then migrated to Railway. User data was migrated from Bubble.io (the previous no-code platform at `app.mostandoc.com`) using the migration tool in `server/migration.ts` — 395 users, 109 clients, 517 contracts, 6 profiles were transferred.
+
+**Legacy configs** (kept for reference):
+- `.replit` — original Replit config
+- `Procfile` — Heroku (alternative deployment)
