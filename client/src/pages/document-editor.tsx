@@ -69,7 +69,7 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
 
   if (error) {
     return (
-      <div className="w-full min-h-[600px] flex items-center justify-center bg-white dark:bg-gray-900">
+      <div className="w-full min-h-[400px] md:min-h-[600px] flex items-center justify-center bg-white dark:bg-gray-900">
         <p className="text-muted-foreground">تعذر عرض ملف PDF</p>
       </div>
     );
@@ -77,7 +77,7 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
 
   if (!imgSrc) {
     return (
-      <div className="w-full min-h-[600px] flex items-center justify-center">
+      <div className="w-full min-h-[400px] md:min-h-[600px] flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -457,8 +457,8 @@ export default function DocumentEditor() {
         <div className="flex-1 overflow-auto bg-muted/20 p-4">
           <div
             ref={canvasRef}
-            className="relative mx-auto bg-white dark:bg-gray-900 shadow-lg rounded-lg overflow-hidden select-none"
-            style={{ width: "100%", maxWidth: 800, minHeight: 600 }}
+            className="relative mx-auto bg-white dark:bg-gray-900 shadow-lg rounded-lg overflow-hidden select-none min-h-[400px] md:min-h-[600px]"
+            style={{ width: "100%", maxWidth: 800 }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
@@ -538,9 +538,8 @@ export default function DocumentEditor() {
                 ref={sigPadRef}
                 penColor="black"
                 canvasProps={{
-                  width: 400,
-                  height: 200,
                   className: "w-full",
+                  style: { width: "100%", height: "200px" },
                   "data-testid": "signature-canvas",
                 }}
               />

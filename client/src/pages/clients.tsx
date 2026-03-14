@@ -129,7 +129,7 @@ export default function ClientsPage() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="بحث بالاسم أو الإيميل..." value={search} onChange={(e) => setSearch(e.target.value)} className="pr-9" data-testid="input-search-clients" />
         </div>
@@ -248,7 +248,7 @@ export default function ClientsPage() {
               </DialogHeader>
               <div className="space-y-4">
                 {/* Client Info */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   {viewingClient.email && (
                     <div><span className="text-muted-foreground">البريد:</span> <span className="font-medium">{viewingClient.email}</span></div>
                   )}

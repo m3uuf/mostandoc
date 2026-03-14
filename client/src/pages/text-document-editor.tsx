@@ -852,7 +852,7 @@ export default function TextDocumentEditor() {
         {/* Editor */}
         <ResizablePanel defaultSize={sidebarOpen ? 78 : 100} minSize={50}>
           <div className="h-full overflow-auto bg-muted/30 py-8 px-4">
-            <div className="max-w-3xl mx-auto bg-background shadow-md rounded-sm min-h-[calc(100vh-200px)] px-12 py-10 text-base leading-relaxed">
+            <div className="max-w-3xl mx-auto bg-background shadow-md rounded-sm min-h-[calc(100vh-200px)] px-4 md:px-12 py-6 md:py-10 text-base leading-relaxed">
               <EditorContent editor={editor} />
             </div>
           </div>

@@ -121,17 +121,17 @@ export default function PublicProfile() {
         {effectiveHeaderStyle === "image" && coverImageUrl && (
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70" />
         )}
-        <div className={`relative container mx-auto px-4 py-16 text-center ${heroTextClass}`}>
+        <div className={`relative container mx-auto px-4 py-8 md:py-16 text-center ${heroTextClass}`}>
           <div className="flex items-center justify-center gap-4 mb-4">
             {logoUrl && (
               <img src={logoUrl} alt="logo" className="h-12 w-12 rounded-md object-cover border-2 border-white/20" data-testid="img-logo" />
             )}
-            <Avatar className="h-24 w-24 border-4 border-white/20">
+            <Avatar className="h-20 w-20 md:h-24 md:w-24 border-4 border-white/20">
               <AvatarImage src={avatarUrl || undefined} />
               <AvatarFallback className="text-2xl bg-white/10">{(profile.fullName || username)[0]}</AvatarFallback>
             </Avatar>
           </div>
-          <h1 className="text-3xl font-bold mb-2" data-testid="text-profile-name">{profile.fullName || username}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold mb-2" data-testid="text-profile-name">{profile.fullName || username}</h1>
           {profile.profession && <p className={`text-lg mb-2 ${heroMutedClass}`}>{professionLabels[profile.profession] || profile.profession}</p>}
           {profile.bio && <p className={`max-w-xl mx-auto mb-4 ${heroMutedClass}`}>{profile.bio}</p>}
           <div className={`flex items-center justify-center gap-4 flex-wrap text-sm ${heroMutedClass}`}>
