@@ -182,7 +182,7 @@ export default function SignDocument() {
               /* ─── Text Document (HTML content) ───────────────── */
               <div>
                 <div
-                  className="prose prose-sm max-w-none px-8 py-6 bg-white dark:bg-gray-900 rounded-t-lg text-base leading-relaxed"
+                  className="prose prose-sm max-w-none px-4 md:px-8 py-4 md:py-6 bg-white dark:bg-gray-900 rounded-t-lg text-base leading-relaxed"
                   dir="auto"
                   dangerouslySetInnerHTML={{ __html: (doc as any).content || "" }}
                   style={{ minHeight: 300, fontFamily: "'IBM Plex Sans Arabic', Tahoma, sans-serif" }}
@@ -190,7 +190,7 @@ export default function SignDocument() {
 
                 {/* ─── Fillable Fields Interactive Section ───── */}
                 {fillableFields.length > 0 && (
-                  <div className="border-t bg-gray-50 dark:bg-gray-900/50 px-8 py-6 rounded-b-lg space-y-4" dir="rtl">
+                  <div className="border-t bg-gray-50 dark:bg-gray-900/50 px-4 md:px-8 py-4 md:py-6 rounded-b-lg space-y-4" dir="rtl">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                         <PenTool className="h-4 w-4 text-primary" />
@@ -226,9 +226,8 @@ export default function SignDocument() {
                                   ref={(ref) => { fillableSigRefs.current[idx] = ref; }}
                                   penColor={config.color}
                                   canvasProps={{
-                                    width: 500,
-                                    height: 150,
                                     className: "w-full",
+                                    style: { width: "100%", height: "150px" },
                                   }}
                                 />
                               </div>
@@ -366,9 +365,8 @@ export default function SignDocument() {
                   ref={sigPadRef}
                   penColor="black"
                   canvasProps={{
-                    width: 600,
-                    height: 200,
                     className: "w-full",
+                    style: { width: "100%", height: "200px" },
                     "data-testid": "public-signature-canvas",
                   }}
                 />

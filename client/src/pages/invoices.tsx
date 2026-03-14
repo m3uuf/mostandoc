@@ -265,12 +265,12 @@ export default function InvoicesPage() {
               </div>
               <div className="space-y-2">
                 {items.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-5"><Input placeholder="الوصف" value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} data-testid={`input-item-desc-${idx}`} /></div>
-                    <div className="col-span-2"><Input type="number" placeholder="الكمية" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} /></div>
-                    <div className="col-span-2"><Input type="number" placeholder="السعر" value={item.unitPrice} onChange={(e) => updateItem(idx, "unitPrice", e.target.value)} /></div>
-                    <div className="col-span-2"><Input readOnly value={item.total} className="bg-muted" /></div>
-                    <div className="col-span-1"><Button size="icon" variant="ghost" onClick={() => removeItem(idx)} disabled={items.length === 1}><X className="h-4 w-4" /></Button></div>
+                  <div key={idx} className="grid grid-cols-2 md:grid-cols-12 gap-2 items-end border-b md:border-0 pb-3 md:pb-0">
+                    <div className="col-span-2 md:col-span-5"><Input placeholder="الوصف" value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} data-testid={`input-item-desc-${idx}`} /></div>
+                    <div className="col-span-1 md:col-span-2"><Input type="number" placeholder="الكمية" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", e.target.value)} /></div>
+                    <div className="col-span-1 md:col-span-2"><Input type="number" placeholder="السعر" value={item.unitPrice} onChange={(e) => updateItem(idx, "unitPrice", e.target.value)} /></div>
+                    <div className="col-span-1 md:col-span-2"><Input readOnly value={item.total} className="bg-muted" /></div>
+                    <div className="col-span-1 md:col-span-1"><Button size="icon" variant="ghost" onClick={() => removeItem(idx)} disabled={items.length === 1}><X className="h-4 w-4" /></Button></div>
                   </div>
                 ))}
               </div>
