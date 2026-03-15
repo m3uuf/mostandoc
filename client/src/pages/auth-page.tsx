@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Loader2, Eye, EyeOff, Mail, ArrowRight, MessageCircle } from "lucide-react";
 import { SiGoogle, SiFacebook, SiApple } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+// apiRequest removed — auth mutations use raw fetch for proper error message parsing
 import WhatsAppButton from "@/components/whatsapp-button";
 const logoIcon = "/favicon.png";
 
@@ -34,10 +34,15 @@ export default function AuthPage() {
 
   const loginMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/auth/login", { email, password });
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || "فشل في تسجيل الدخول");
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "البريد الإلكتروني أو كلمة المرور غير صحيحة");
       }
       return res.json();
     },
@@ -52,9 +57,14 @@ export default function AuthPage() {
 
   const registerMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/auth/register", { email, password, firstName, lastName, phone });
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, firstName, lastName, phone }),
+        credentials: "include",
+      });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "فشل في إنشاء الحساب");
       }
       return res.json();
@@ -70,9 +80,14 @@ export default function AuthPage() {
 
   const forgotMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/auth/forgot-password", { email });
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+        credentials: "include",
+      });
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "فشل في إرسال الرابط");
       }
       return res.json();

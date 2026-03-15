@@ -100,6 +100,7 @@ function Router() {
         <Route path="/auth/verify-email" component={VerifyEmailPage} />
         <Route path="/"><Redirect to="/dashboard" /></Route>
         <Route path="/auth"><Redirect to="/dashboard" /></Route>
+        <Route path="/register"><Redirect to="/dashboard" /></Route>
         <Route path="/dashboard/(.*)" component={AuthenticatedLayout} />
         <Route path="/dashboard" component={AuthenticatedLayout} />
         <Route component={NotFound} />
@@ -117,6 +118,7 @@ function Router() {
       <Route path="/auth/reset-password" component={ResetPasswordPage} />
       <Route path="/auth/verify-email" component={VerifyEmailPage} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/register"><Redirect to="/auth" /></Route>
       {/* app.mostandoc.com: show login instead of landing */}
       {isAppSubdomain ? (
         <Route path="/"><Redirect to="/auth" /></Route>

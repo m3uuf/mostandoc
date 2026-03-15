@@ -84,6 +84,7 @@ export default function Landing() {
   const [chartAnimated, setChartAnimated] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
+  const featuresAnim = useAnimateOnScroll();
   const statsAnim = useAnimateOnScroll();
   const stat1 = useCounterAnimation(500, "+", statsAnim.visible);
   const stat2 = useCounterAnimation(15000, "+", statsAnim.visible);
@@ -390,18 +391,15 @@ export default function Landing() {
           color: #1A1A2E; font-size: 1.5rem; cursor: pointer;
         }
 
-        /* Animations */
-        @keyframes landingFadeInUp {
-          from { opacity: 0; transform: translateY(30px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
+        /* Animations — using transitions for reliable scroll-triggered reveal */
         .landing-page .l-animate {
-          opacity: 0; animation: landingFadeInUp 0.6s ease forwards;
+          opacity: 0; transform: translateY(30px);
+          transition: opacity 0.6s ease, transform 0.6s ease;
         }
-        .landing-page .l-animate.visible { animation-play-state: running; }
-        .landing-page .l-delay-1 { animation-delay: 0.1s; }
-        .landing-page .l-delay-2 { animation-delay: 0.2s; }
-        .landing-page .l-delay-3 { animation-delay: 0.3s; }
+        .landing-page .l-animate.visible { opacity: 1; transform: translateY(0); }
+        .landing-page .l-delay-1 { transition-delay: 0.1s; }
+        .landing-page .l-delay-2 { transition-delay: 0.2s; }
+        .landing-page .l-delay-3 { transition-delay: 0.3s; }
 
         /* Responsive */
         @media (max-width: 968px) {
@@ -522,9 +520,9 @@ export default function Landing() {
             <h2>مميزات تجعل عملك أسهل</h2>
             <p>أدوات قوية ومتكاملة صُممت خصيصاً لتسهيل إدارة أعمالك</p>
           </div>
-          <div className="l-features-grid">
+          <div className="l-features-grid" ref={featuresAnim.ref}>
             {features.map((f, i) => (
-              <div key={f.title} className={`l-feature-card l-animate visible l-delay-${(i % 3) + 1}`}>
+              <div key={f.title} className={`l-feature-card l-animate${featuresAnim.visible ? " visible" : ""} l-delay-${(i % 3) + 1}`}>
                 <div className="l-feature-icon" style={{ background: f.color, color: f.iconColor }}>{f.icon}</div>
                 <h3>{f.title}</h3>
                 <p>{f.desc}</p>

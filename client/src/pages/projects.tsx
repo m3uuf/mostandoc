@@ -227,8 +227,8 @@ export default function ProjectsPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>تاريخ البدء</Label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
-              <div><Label>الموعد النهائي</Label><Input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></div>
+              <div><Label>تاريخ البدء</Label><Input type="date" dir="ltr" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+              <div><Label>الموعد النهائي</Label><Input type="date" dir="ltr" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></div>
             </div>
             <div><Label>الميزانية</Label><Input type="number" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} /></div>
           </div>
@@ -293,7 +293,7 @@ export default function ProjectsPage() {
                 <SelectContent>{Object.entries(priorityLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div><Label>تاريخ الاستحقاق</Label><Input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></div>
+            <div><Label>تاريخ الاستحقاق</Label><Input type="date" dir="ltr" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} /></div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setTaskDialogOpen(false)}>إلغاء</Button>

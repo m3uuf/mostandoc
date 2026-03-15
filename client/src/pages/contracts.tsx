@@ -115,8 +115,13 @@ export default function ContractsPage() {
     }
   };
 
+  const stripHtml = (html: string): string => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body.textContent || "";
+  };
+
   const applyTemplate = (template: typeof templates[0]) => {
-    setForm({ ...form, title: template.name, content: template.content });
+    setForm({ ...form, title: template.name, content: stripHtml(template.content) });
     toast({ title: `تم تطبيق قالب "${template.name}"` });
   };
 
@@ -259,8 +264,8 @@ export default function ContractsPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>تاريخ البداية</Label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
-              <div><Label>تاريخ النهاية</Label><Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+              <div><Label>تاريخ البداية</Label><Input type="date" dir="ltr" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
+              <div><Label>تاريخ النهاية</Label><Input type="date" dir="ltr" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
             </div>
             <div>
               <Label>الحالة</Label>

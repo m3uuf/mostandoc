@@ -241,8 +241,8 @@ export default function InvoicesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div><Label>رقم الفاتورة</Label><Input value={form.invoiceNumber} readOnly className="bg-muted" /></div>
-              <div><Label>تاريخ الإصدار</Label><Input type="date" value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} /></div>
-              <div><Label>تاريخ الاستحقاق</Label><Input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></div>
+              <div><Label>تاريخ الإصدار</Label><Input type="date" dir="ltr" value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} /></div>
+              <div><Label>تاريخ الاستحقاق</Label><Input type="date" dir="ltr" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>

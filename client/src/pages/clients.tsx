@@ -256,20 +256,20 @@ export default function ClientsPage() {
               <div className="space-y-4">
                 {/* Client Info */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  {viewingClient.email && (
-                    <div><span className="text-muted-foreground">البريد:</span> <span className="font-medium">{viewingClient.email}</span></div>
-                  )}
-                  {viewingClient.phone && (
-                    <div><span className="text-muted-foreground">الجوال:</span> <span className="font-medium">{viewingClient.phone}</span></div>
-                  )}
-                  {viewingClient.company && (
-                    <div><span className="text-muted-foreground">الشركة:</span> <span className="font-medium">{viewingClient.company}</span></div>
-                  )}
+                  <div><span className="text-muted-foreground">البريد:</span> <span className="font-medium">{viewingClient.email || "-"}</span></div>
+                  <div><span className="text-muted-foreground">الجوال:</span> <span className="font-medium">{viewingClient.phone || "-"}</span></div>
+                  <div><span className="text-muted-foreground">الشركة:</span> <span className="font-medium">{viewingClient.company || "-"}</span></div>
                   <div>
                     <span className="text-muted-foreground">الحالة:</span>{" "}
                     <Badge variant={statusColors[viewingClient.status || "active"]}>{statusLabels[viewingClient.status || "active"]}</Badge>
                   </div>
                 </div>
+                {viewingClient.notes && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">ملاحظات:</span>
+                    <p className="mt-1 font-medium whitespace-pre-wrap">{viewingClient.notes}</p>
+                  </div>
+                )}
 
                 {/* Documents Section */}
                 <div>
