@@ -20,6 +20,7 @@ import { Strategy as FacebookStrategy } from "passport-facebook";
 import express from "express";
 import path from "path";
 import xss from "xss";
+import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail, sendSigningRequestEmail, sendSignatureConfirmationEmail } from "./email";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-01-27.acacia" as any })
@@ -149,28 +150,8 @@ export async function registerRoutes(
       try {
         const verifyToken = await generateEmailVerificationToken(user.id);
         const verifyUrl = `${req.protocol}://${req.get("host")}/auth/verify-email?token=${verifyToken}`;
-        const { Resend } = await import("resend");
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
-          to: email,
-          subject: "تفعيل بريدك الإلكتروني - مستندك",
-          html: `
-            <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #3B5FE5;">مستندك</h1>
-              </div>
-              <h2>تفعيل البريد الإلكتروني</h2>
-              <p>مرحباً ${firstName},</p>
-              <p>شكراً لتسجيلك في مستندك! اضغط على الزر أدناه لتفعيل بريدك الإلكتروني:</p>
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${verifyUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">تفعيل البريد الإلكتروني</a>
-              </div>
-              <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة 24 ساعة.</p>
-              <p style="color: #666; font-size: 14px;">إذا لم تقم بإنشاء حساب، تجاهل هذه الرسالة.</p>
-            </div>
-          `,
-        });
+        await sendVerificationEmail(email, firstName, verifyUrl);
+        await sendWelcomeEmail(email, firstName);
       } catch (emailError) {
         console.error("Verification email error:", emailError);
       }
@@ -264,28 +245,7 @@ export async function registerRoutes(
       const token = await generatePasswordResetToken(user.id);
       const resetUrl = `${req.protocol}://${req.get("host")}/auth/reset-password?token=${token}`;
       try {
-        const { Resend } = await import("resend");
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
-          to: user.email!,
-          subject: "إعادة تعيين كلمة المرور - مستندك",
-          html: `
-            <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #3B5FE5;">مستندك</h1>
-              </div>
-              <h2>إعادة تعيين كلمة المرور</h2>
-              <p>مرحباً ${user.firstName || ""},</p>
-              <p>لقد طلبت إعادة تعيين كلمة المرور الخاصة بك. اضغط على الزر أدناه:</p>
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">إعادة تعيين كلمة المرور</a>
-              </div>
-              <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة ساعة واحدة فقط.</p>
-              <p style="color: #666; font-size: 14px;">إذا لم تطلب إعادة تعيين كلمة المرور، تجاهل هذه الرسالة.</p>
-            </div>
-          `,
-        });
+        await sendPasswordResetEmail(user.email!, user.firstName || "", resetUrl);
       } catch (emailError) {
         console.error("Email send error:", emailError);
       }
@@ -351,27 +311,7 @@ export async function registerRoutes(
       }
       const verifyToken = await generateEmailVerificationToken(user.id);
       const verifyUrl = `${req.protocol}://${req.get("host")}/auth/verify-email?token=${verifyToken}`;
-      const { Resend } = await import("resend");
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
-        to: user.email,
-        subject: "تفعيل بريدك الإلكتروني - مستندك",
-        html: `
-          <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #3B5FE5;">مستندك</h1>
-            </div>
-            <h2>تفعيل البريد الإلكتروني</h2>
-            <p>مرحباً ${user.firstName || ""},</p>
-            <p>اضغط على الزر أدناه لتفعيل بريدك الإلكتروني:</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${verifyUrl}" style="background-color: #3B5FE5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">تفعيل البريد الإلكتروني</a>
-            </div>
-            <p style="color: #666; font-size: 14px;">هذا الرابط صالح لمدة 24 ساعة.</p>
-          </div>
-        `,
-      });
+      await sendVerificationEmail(user.email, user.firstName || "", verifyUrl);
       res.json({ success: true, message: "تم إرسال رابط التفعيل" });
     } catch (error) {
       console.error("Resend verification error:", error);
@@ -1303,39 +1243,13 @@ export async function registerRoutes(
           const senderName = profile?.businessName || profile?.name || "مستخدم مستندك";
           const signUrl = `${req.protocol}://${req.get("host")}/sign/${doc.shareToken}`;
 
-          const { Resend } = await import("resend");
-          const resend = new Resend(process.env.RESEND_API_KEY);
-          await resend.emails.send({
-            from: process.env.RESEND_FROM_EMAIL || "noreply@resend.dev",
-            to: doc.recipientEmail,
-            subject: `${senderName} يطلب توقيعك على مستند: ${doc.title}`,
-            html: `
-              <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="background: linear-gradient(135deg, #3B5FE5, #2a4bc7); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
-                  <h1 style="color: white; margin: 0; font-size: 24px;">مستندك</h1>
-                </div>
-                <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-                  <p style="font-size: 16px; color: #374151; margin-bottom: 8px;">مرحباً ${doc.recipientName || ""},</p>
-                  <p style="font-size: 15px; color: #6b7280; line-height: 1.8;">
-                    قام <strong>${senderName}</strong> بإرسال مستند بعنوان <strong>"${doc.title}"</strong> ويطلب توقيعك عليه.
-                  </p>
-                  <div style="text-align: center; margin: 30px 0;">
-                    <a href="${signUrl}" style="display: inline-block; background: #3B5FE5; color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold;">
-                      عرض وتوقيع المستند
-                    </a>
-                  </div>
-                  <p style="font-size: 13px; color: #9ca3af; text-align: center;">
-                    أو انسخ هذا الرابط في متصفحك:<br/>
-                    <a href="${signUrl}" style="color: #3B5FE5; word-break: break-all;">${signUrl}</a>
-                  </p>
-                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
-                  <p style="font-size: 12px; color: #9ca3af; text-align: center;">
-                    هذا البريد مرسل تلقائياً من منصة مستندك
-                  </p>
-                </div>
-              </div>
-            `,
-          });
+          await sendSigningRequestEmail(
+            doc.recipientEmail,
+            doc.recipientName || "",
+            senderName,
+            doc.title,
+            signUrl
+          );
           console.log(`Document signing email sent to ${doc.recipientEmail} for document ${doc.id}`);
         } catch (emailError) {
           console.error("Failed to send signing email:", emailError);
@@ -1627,9 +1541,28 @@ export async function registerRoutes(
         }
       }
 
-      const updateData: any = { status: "signed", signedAt: new Date() };
+      const signedAt = new Date();
+      const updateData: any = { status: "signed", signedAt };
       if (signedPdfUrl) updateData.fileUrl = signedPdfUrl;
       await storage.updateDocument(doc.id, doc.userId, updateData);
+
+      // Send signature confirmation emails
+      try {
+        const signedDate = signedAt.toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
+        const owner = await getUserById(doc.userId);
+        const ownerName = owner?.firstName || "صاحب المستند";
+
+        // Notify document owner
+        if (owner?.email) {
+          await sendSignatureConfirmationEmail(owner.email, ownerName, doc.title, signerName, signedDate);
+        }
+        // Notify signer
+        if (signerEmail) {
+          await sendSignatureConfirmationEmail(signerEmail, signerName, doc.title, signerName, signedDate);
+        }
+      } catch (emailError) {
+        console.error("Signature confirmation email error:", emailError);
+      }
 
       res.json({ success: true, message: "تم التوقيع بنجاح" });
     } catch (error) {
@@ -2187,6 +2120,184 @@ export async function registerRoutes(
       res.json(scripts);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
+    }
+  });
+
+  // ─── Admin: Email Sending ─────────────────────────────────────────────────
+  app.post("/api/admin/email/send", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const { to, subject, message, sendToAll } = req.body;
+      const adminId = getUserId(req);
+
+      if (!subject || !message) {
+        return res.status(400).json({ message: "الموضوع والرسالة مطلوبان" });
+      }
+
+      const { Resend } = await import("resend");
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const from = `مستندك <${process.env.RESEND_FROM_EMAIL || "noreply@resend.dev"}>`;
+
+      // Build branded HTML
+      const htmlBody = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#F9FAFB;font-family:'Tajawal',Tahoma,sans-serif;direction:rtl;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F9FAFB;padding:40px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+<tr><td style="background:linear-gradient(135deg,#E8752A,#F5943E);padding:40px 40px 30px;text-align:center;">
+  <h1 style="color:#fff;font-size:24px;font-weight:800;margin:0;font-family:'Tajawal',sans-serif;">${subject}</h1>
+</td></tr>
+<tr><td style="padding:36px 40px;">
+  <div style="font-size:15px;color:#1F2937;line-height:1.8;white-space:pre-wrap;">${message}</div>
+</td></tr>
+<tr><td style="background:#F9FAFB;padding:24px 40px;text-align:center;border-top:1px solid #E5E7EB;">
+  <p style="font-size:13px;color:#9CA3AF;margin:0 0 4px;">مستندك — سجّل مرة واحدة وأدِر كل أعمالك</p>
+  <p style="font-size:12px;color:#9CA3AF;margin:0;">© ${new Date().getFullYear()} مستندك. جميع الحقوق محفوظة.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+      let sentCount = 0;
+      let failedCount = 0;
+
+      if (sendToAll) {
+        const allUsers = await dbQuery(`SELECT email, first_name FROM users WHERE email IS NOT NULL AND is_suspended = false AND role != 'superadmin'`);
+        for (const u of allUsers) {
+          try {
+            await resend.emails.send({ from, to: u.email, subject, html: htmlBody });
+            sentCount++;
+          } catch {
+            failedCount++;
+          }
+        }
+        await logAudit(adminId, "email.broadcast", "email", undefined, { subject, sentCount, failedCount }, getClientIp(req));
+      } else {
+        if (!to) return res.status(400).json({ message: "البريد الإلكتروني مطلوب" });
+        const emails = Array.isArray(to) ? to : [to];
+        for (const email of emails) {
+          try {
+            await resend.emails.send({ from, to: email, subject, html: htmlBody });
+            sentCount++;
+          } catch {
+            failedCount++;
+          }
+        }
+        await logAudit(adminId, "email.send", "email", undefined, { subject, to: emails, sentCount, failedCount }, getClientIp(req));
+      }
+
+      res.json({ success: true, sentCount, failedCount });
+    } catch (error: any) {
+      console.error("Admin email error:", error);
+      res.status(500).json({ message: error?.message || "فشل في إرسال البريد" });
+    }
+  });
+
+  // ─── Admin: Analytics ───────────────────────────────────────────────────────
+  app.get("/api/admin/analytics", isAdmin, async (req: Request, res: Response) => {
+    try {
+      const analytics = await dbQuery(`
+        SELECT
+          -- Users
+          (SELECT COUNT(*) FROM users) as total_users,
+          (SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '30 days') as new_users_30d,
+          (SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '7 days') as new_users_7d,
+          (SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE) as new_users_today,
+          (SELECT COUNT(*) FROM users WHERE is_suspended = true) as suspended_users,
+          (SELECT COUNT(*) FROM users WHERE email_verified = true) as verified_users,
+
+          -- Documents
+          (SELECT COUNT(*) FROM documents) as total_documents,
+          (SELECT COUNT(*) FROM documents WHERE status = 'signed') as signed_documents,
+          (SELECT COUNT(*) FROM documents WHERE status = 'sent') as sent_documents,
+          (SELECT COUNT(*) FROM documents WHERE status = 'draft') as draft_documents,
+          (SELECT COUNT(*) FROM documents WHERE created_at >= NOW() - INTERVAL '30 days') as new_documents_30d,
+
+          -- Signatures
+          (SELECT COUNT(*) FROM document_signatures) as total_signatures,
+          (SELECT COUNT(*) FROM document_signatures WHERE signed_at >= NOW() - INTERVAL '30 days') as signatures_30d,
+          (SELECT COUNT(*) FROM document_signatures WHERE signed_at >= NOW() - INTERVAL '7 days') as signatures_7d,
+
+          -- Clients
+          (SELECT COUNT(*) FROM clients) as total_clients,
+          (SELECT COUNT(*) FROM clients WHERE created_at >= NOW() - INTERVAL '30 days') as new_clients_30d,
+
+          -- Invoices
+          (SELECT COUNT(*) FROM invoices) as total_invoices,
+          (SELECT COUNT(*) FROM invoices WHERE status = 'paid') as paid_invoices,
+          (SELECT COUNT(*) FROM invoices WHERE status = 'pending') as pending_invoices,
+          (SELECT COUNT(*) FROM invoices WHERE status = 'overdue') as overdue_invoices,
+
+          -- Projects
+          (SELECT COUNT(*) FROM projects) as total_projects,
+          (SELECT COUNT(*) FROM projects WHERE status = 'active') as active_projects,
+
+          -- Profiles
+          (SELECT COUNT(*) FROM profiles) as total_profiles,
+
+          -- Subscriptions
+          (SELECT COUNT(*) FROM users WHERE subscription_plan IS NOT NULL AND subscription_plan != 'free') as paid_subscriptions
+      `);
+
+      // Daily signups for last 30 days
+      const dailySignups = await dbQuery(`
+        SELECT DATE(created_at) as date, COUNT(*) as count
+        FROM users
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `);
+
+      // Daily documents for last 30 days
+      const dailyDocuments = await dbQuery(`
+        SELECT DATE(created_at) as date, COUNT(*) as count
+        FROM documents
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `);
+
+      // Daily signatures for last 30 days
+      const dailySignatures = await dbQuery(`
+        SELECT DATE(signed_at) as date, COUNT(*) as count
+        FROM document_signatures
+        WHERE signed_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(signed_at)
+        ORDER BY date ASC
+      `);
+
+      // Top users by documents
+      const topUsers = await dbQuery(`
+        SELECT u.first_name, u.last_name, u.email, COUNT(d.id) as doc_count
+        FROM users u
+        LEFT JOIN documents d ON d.user_id = u.id
+        GROUP BY u.id, u.first_name, u.last_name, u.email
+        ORDER BY doc_count DESC
+        LIMIT 10
+      `);
+
+      // Document types distribution
+      const docTypes = await dbQuery(`
+        SELECT doc_type, COUNT(*) as count
+        FROM documents
+        GROUP BY doc_type
+      `);
+
+      res.json({
+        summary: analytics[0],
+        dailySignups,
+        dailyDocuments,
+        dailySignatures,
+        topUsers,
+        docTypes,
+      });
+    } catch (error: any) {
+      console.error("Analytics error:", error);
+      res.status(500).json({ message: error?.message || "فشل في جلب التحليلات" });
     }
   });
 

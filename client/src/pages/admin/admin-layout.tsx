@@ -2,7 +2,7 @@ import { Link, useLocation, Switch, Route } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, Users, FileText, LayoutTemplate, CreditCard,
-  Bell, Settings, ScrollText, ArrowRight, Code,
+  Bell, Settings, ScrollText, ArrowRight, Code, TrendingUp,
 } from "lucide-react";
 import AdminOverview from "./admin-overview";
 import AdminUsers from "./admin-users";
@@ -13,6 +13,7 @@ import AdminNotifications from "./admin-notifications";
 import AdminSettings from "./admin-settings";
 import AdminAuditLog from "./admin-audit-log";
 import AdminTracking from "./admin-tracking";
+import AdminAnalytics from "./admin-analytics";
 
 const adminNav = [
   { title: "نظرة عامة", url: "/dashboard/admin", icon: BarChart3 },
@@ -21,6 +22,7 @@ const adminNav = [
   { title: "القوالب", url: "/dashboard/admin/templates", icon: LayoutTemplate },
   { title: "الاشتراكات", url: "/dashboard/admin/subscriptions", icon: CreditCard },
   { title: "الإشعارات", url: "/dashboard/admin/notifications", icon: Bell },
+  { title: "التحليلات", url: "/dashboard/admin/analytics", icon: TrendingUp },
   { title: "أكواد التتبع", url: "/dashboard/admin/tracking", icon: Code },
   { title: "الإعدادات", url: "/dashboard/admin/settings", icon: Settings },
   { title: "سجل النشاطات", url: "/dashboard/admin/audit-log", icon: ScrollText },
@@ -74,6 +76,7 @@ export default function AdminLayout() {
           <Route path="/dashboard/admin/templates" component={AdminTemplates} />
           <Route path="/dashboard/admin/subscriptions" component={AdminSubscriptions} />
           <Route path="/dashboard/admin/notifications" component={AdminNotifications} />
+          <Route path="/dashboard/admin/analytics" component={AdminAnalytics} />
           <Route path="/dashboard/admin/tracking" component={AdminTracking} />
           <Route path="/dashboard/admin/settings" component={AdminSettings} />
           <Route path="/dashboard/admin/audit-log" component={AdminAuditLog} />

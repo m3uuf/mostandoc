@@ -13,10 +13,11 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Bell, Send, Megaphone, AlertTriangle, Users, User,
+  Bell, Send, Megaphone, AlertTriangle, Users, User, Mail,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface AdminNotification {
   id: string;
@@ -48,6 +49,12 @@ export default function AdminNotifications() {
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerMessage, setBannerMessage] = useState("");
   const [bannerExpiry, setBannerExpiry] = useState("");
+
+  // Email form
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailSendAll, setEmailSendAll] = useState(false);
 
   const { data: notifications } = useQuery<AdminNotification[]>({
     queryKey: ["/api/admin/notifications"],
@@ -103,6 +110,21 @@ export default function AdminNotifications() {
     },
   });
 
+  const emailMutation = useMutation({
+    mutationFn: (data: { to?: string; subject: string; message: string; sendToAll?: boolean }) =>
+      apiRequest("POST", "/api/admin/email/send", data).then(r => r.json()),
+    onSuccess: (result: { sentCount: number; failedCount: number }) => {
+      toast({ title: `تم إرسال ${result.sentCount} بريد إلكتروني${result.failedCount > 0 ? ` (${result.failedCount} فشل)` : ""}` });
+      setEmailTo("");
+      setEmailSubject("");
+      setEmailMessage("");
+      setEmailSendAll(false);
+    },
+    onError: () => {
+      toast({ title: "فشل في إرسال البريد", variant: "destructive" });
+    },
+  });
+
   const typeLabels: Record<string, { label: string; icon: React.ElementType; color: string }> = {
     broadcast: { label: "عام", icon: Megaphone, color: "bg-blue-100 text-blue-700" },
     targeted: { label: "مستهدف", icon: User, color: "bg-purple-100 text-purple-700" },
@@ -139,6 +161,7 @@ export default function AdminNotifications() {
           <TabsTrigger value="broadcast" className="gap-2"><Megaphone className="h-4 w-4" /> إشعار عام</TabsTrigger>
           <TabsTrigger value="targeted" className="gap-2"><User className="h-4 w-4" /> إشعار مستهدف</TabsTrigger>
           <TabsTrigger value="banner" className="gap-2"><AlertTriangle className="h-4 w-4" /> بانر المنصة</TabsTrigger>
+          <TabsTrigger value="email" className="gap-2"><Mail className="h-4 w-4" /> إرسال بريد</TabsTrigger>
         </TabsList>
 
         {/* Broadcast Tab */}
@@ -221,6 +244,60 @@ export default function AdminNotifications() {
               >
                 <AlertTriangle className="h-4 w-4 ml-2" />
                 {bannerMutation.isPending ? "جاري النشر..." : "نشر البانر"}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {/* Email Tab */}
+        <TabsContent value="email">
+          <Card>
+            <CardHeader><CardTitle className="text-lg">إرسال بريد إلكتروني</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">إرسال بريد إلكتروني بهوية مستندك عبر Resend</p>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="sendAll"
+                  checked={emailSendAll}
+                  onCheckedChange={(v) => setEmailSendAll(!!v)}
+                />
+                <Label htmlFor="sendAll" className="text-sm">إرسال لجميع المستخدمين</Label>
+              </div>
+              {!emailSendAll && (
+                <div>
+                  <Label>البريد الإلكتروني</Label>
+                  <Input
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    placeholder="example@email.com"
+                    type="email"
+                    dir="ltr"
+                  />
+                </div>
+              )}
+              <div>
+                <Label>الموضوع</Label>
+                <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="موضوع البريد" />
+              </div>
+              <div>
+                <Label>الرسالة</Label>
+                <Textarea
+                  value={emailMessage}
+                  onChange={(e) => setEmailMessage(e.target.value)}
+                  placeholder="محتوى الرسالة..."
+                  rows={6}
+                />
+              </div>
+              <Button
+                onClick={() => emailMutation.mutate({
+                  ...(emailSendAll ? { sendToAll: true } : { to: emailTo }),
+                  subject: emailSubject,
+                  message: emailMessage,
+                })}
+                disabled={!emailSubject || !emailMessage || (!emailSendAll && !emailTo) || emailMutation.isPending}
+                className="gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                {emailMutation.isPending ? "جاري الإرسال..." : emailSendAll ? "إرسال للجميع" : "إرسال"}
               </Button>
             </CardContent>
           </Card>

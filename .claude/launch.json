@@ -6,6 +6,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5000,
+      "autoPort": true,
       "env": {
         "DATABASE_URL": "postgresql://m3uuf@localhost:5432/mostandoc",
         "SESSION_SECRET": "mostandoc-local-dev-session-secret-key-2026",

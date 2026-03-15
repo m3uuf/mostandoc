@@ -53,7 +53,7 @@
 ### ميزات غير مكتملة
 - [ ] إكمال Apple Sign-In (الـ backend موجود، الـ UI معطل)
 - [ ] نقل أسعار الباقات من hardcoded في routes.ts إلى قاعدة البيانات
-- [ ] نقل email templates من routes.ts إلى ملفات منفصلة أو قاعدة البيانات
+- [x] نقل email templates من routes.ts إلى ملفات منفصلة (server/email.ts)
 
 ### البنية التحتية (Infrastructure)
 - [ ] إعداد CI/CD pipeline (GitHub Actions)
