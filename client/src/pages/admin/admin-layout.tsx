@@ -2,7 +2,7 @@ import { Link, useLocation, Switch, Route } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   BarChart3, Users, FileText, LayoutTemplate, CreditCard,
-  Bell, Settings, ScrollText, ArrowRight, Code, TrendingUp,
+  Bell, Settings, ScrollText, ArrowRight, TrendingUp, Megaphone,
 } from "lucide-react";
 import AdminOverview from "./admin-overview";
 import AdminUsers from "./admin-users";
@@ -12,7 +12,7 @@ import AdminSubscriptions from "./admin-subscriptions";
 import AdminNotifications from "./admin-notifications";
 import AdminSettings from "./admin-settings";
 import AdminAuditLog from "./admin-audit-log";
-import AdminTracking from "./admin-tracking";
+import AdminMarketing from "./admin-marketing";
 import AdminAnalytics from "./admin-analytics";
 
 const adminNav = [
@@ -23,7 +23,7 @@ const adminNav = [
   { title: "الاشتراكات", url: "/dashboard/admin/subscriptions", icon: CreditCard },
   { title: "الإشعارات", url: "/dashboard/admin/notifications", icon: Bell },
   { title: "التحليلات", url: "/dashboard/admin/analytics", icon: TrendingUp },
-  { title: "أكواد التتبع", url: "/dashboard/admin/tracking", icon: Code },
+  { title: "التسويق", url: "/dashboard/admin/marketing", icon: Megaphone },
   { title: "الإعدادات", url: "/dashboard/admin/settings", icon: Settings },
   { title: "سجل النشاطات", url: "/dashboard/admin/audit-log", icon: ScrollText },
 ];
@@ -77,7 +77,7 @@ export default function AdminLayout() {
           <Route path="/dashboard/admin/subscriptions" component={AdminSubscriptions} />
           <Route path="/dashboard/admin/notifications" component={AdminNotifications} />
           <Route path="/dashboard/admin/analytics" component={AdminAnalytics} />
-          <Route path="/dashboard/admin/tracking" component={AdminTracking} />
+          <Route path="/dashboard/admin/marketing" component={AdminMarketing} />
           <Route path="/dashboard/admin/settings" component={AdminSettings} />
           <Route path="/dashboard/admin/audit-log" component={AdminAuditLog} />
         </Switch>
