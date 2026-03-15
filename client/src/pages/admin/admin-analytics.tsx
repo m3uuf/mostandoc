@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -75,7 +74,6 @@ function formatDate(d: string) {
 export default function AdminAnalytics() {
   const { data, isLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics"],
-    queryFn: () => apiRequest("GET", "/api/admin/analytics").then(r => r.json()),
   });
 
   if (isLoading || !data) {
