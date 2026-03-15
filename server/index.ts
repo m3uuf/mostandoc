@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -14,6 +15,13 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// ─── Security headers ────────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false,   // disabled — CSP needs fine-tuning per app
+  crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+}));
 
 // ─── Gzip/Brotli compression (reduces response sizes by ~70%) ────
 app.use(compression({
@@ -50,7 +58,7 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {

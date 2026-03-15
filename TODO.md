@@ -3,16 +3,18 @@
 ## أولوية عالية (High Priority)
 
 ### الأمان (Security)
-- [ ] إضافة security headers middleware (HSTS, X-Frame-Options, X-Content-Type-Options, CSP)
-- [ ] إضافة rate limiting على `/api/auth/resend-verification` و `/api/auth/verify-email`
-- [ ] إضافة HTML/XSS sanitization على المحتوى اللي يدخله المستخدم (أسماء، وصف، رسائل)
+- [x] إضافة security headers middleware (helmet: HSTS, X-Frame-Options, X-Content-Type-Options)
+- [x] إضافة rate limiting على `/api/auth/resend-verification` و `/api/auth/verify-email` و `/api/auth/forgot-password`
+- [x] إضافة HTML/XSS sanitization على المحتوى اللي يدخله المستخدم (xss library على document signing)
+- [x] إصلاح IPv6 rate-limit validation error
 - [ ] تحسين SameSite cookie من `lax` إلى `strict` للعمليات الحساسة
 - [ ] التحقق من file type/size validation في جميع endpoints الرفع
 
 ### Type Safety
-- [ ] إزالة `as any` type casting (14+ حالة في `server/routes.ts`)
-- [ ] استبدال `(req.session as any)?.userId` بـ typed session interface
-- [ ] استبدال `Record<string, any>` بأنواع محددة في الـ routes
+- [x] إزالة `as any` type casting من `server/routes.ts` (session, passport user, Anthropic SDK)
+- [x] استبدال `(req.session as any)?.userId` بـ typed session interface
+- [x] استبدال `Record<string, any>` بـ `Record<string, unknown>` في index.ts و routes.ts
+- [ ] إزالة `as any` المتبقية في `server/storage.ts` و `server/migration.ts`
 
 ## أولوية متوسطة (Medium Priority)
 

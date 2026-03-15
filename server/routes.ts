@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import rateLimit from "express-rate-limit";
+import rateLimit, { type Options } from "express-rate-limit";
 import Stripe from "stripe";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql, eq } from "drizzle-orm";
@@ -19,6 +19,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as FacebookStrategy } from "passport-facebook";
 import express from "express";
 import path from "path";
+import xss from "xss";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-01-27.acacia" as any })
@@ -40,7 +41,7 @@ function getPagination(req: Request, defaultLimit = 20) {
   return { page, limit };
 }
 
-function cleanDates(obj: Record<string, any>, dateFields: string[]): Record<string, any> {
+function cleanDates(obj: Record<string, unknown>, dateFields: string[]): Record<string, unknown> {
   const cleaned = { ...obj };
   for (const field of dateFields) {
     if (cleaned[field] === "" || cleaned[field] === undefined) {
@@ -81,15 +82,17 @@ export async function registerRoutes(
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
   // ─── Smart rate limiting (per-user for authenticated, per-IP for public) ───
+  const smartKeyGenerator: Options["keyGenerator"] = (req) => {
+    return req.session?.userId || req.ip || "unknown";
+  };
+
   const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000,                  // increased from 500 for power users
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => {
-      // Use user ID if authenticated, otherwise IP
-      return (req.session as any)?.userId || req.ip || "unknown";
-    },
+    keyGenerator: smartKeyGenerator,
+    validate: false,
     message: { message: "تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً." },
   });
 
@@ -102,11 +105,12 @@ export async function registerRoutes(
   });
 
   const searchLimiter = rateLimit({
-    windowMs: 60 * 1000,       // 1 minute window
-    max: 30,                    // 30 searches per minute
+    windowMs: 60 * 1000,
+    max: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => (req.session as any)?.userId || req.ip || "unknown",
+    keyGenerator: smartKeyGenerator,
+    validate: false,
     message: { message: "تم تجاوز حد البحث. حاول بعد دقيقة." },
   });
 
@@ -120,6 +124,9 @@ export async function registerRoutes(
 
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
+  app.use("/api/auth/verify-email", authLimiter);
+  app.use("/api/auth/resend-verification", authLimiter);
+  app.use("/api/auth/forgot-password", authLimiter);
   app.use("/api/", generalLimiter);
 
   setupCustomAuth(app);
@@ -395,7 +402,7 @@ export async function registerRoutes(
 
     app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));
     app.get("/api/auth/google/callback", passport.authenticate("google", { session: false, failureRedirect: "/auth?error=google" }), (req, res) => {
-      const user = req.user as any;
+      const user = req.user as { id: string };
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -425,7 +432,7 @@ export async function registerRoutes(
 
     app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email"], session: false }));
     app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { session: false, failureRedirect: "/auth?error=facebook" }), (req, res) => {
-      const user = req.user as any;
+      const user = req.user as { id: string };
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -460,7 +467,7 @@ export async function registerRoutes(
 
     app.get("/api/auth/apple", passport.authenticate("apple", { session: false }));
     app.post("/api/auth/apple/callback", passport.authenticate("apple", { session: false, failureRedirect: "/auth?error=apple" }), (req, res) => {
-      const user = req.user as any;
+      const user = req.user as { id: string };
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -1572,7 +1579,7 @@ export async function registerRoutes(
               /(<div[^>]*data-type="fillableField"[^>]*data-field-type="([^"]*)"[^>]*data-label="([^"]*)"[^>]*>)([\s\S]*?)(<\/div>)/g,
               (_match, _openTag, fieldType, label, _innerContent, _closeTag) => {
                 const idx = fieldIndex++;
-                const value = fillableFieldValues?.[String(idx)] || "";
+                const value = xss(fillableFieldValues?.[String(idx)] || "");
                 const sigData = fillableSignatures?.[String(idx)] || "";
 
                 if (fieldType === "signature" && sigData) {
@@ -1605,7 +1612,7 @@ export async function registerRoutes(
   <div class="signature-section">
     <p><strong>التوقيع:</strong></p>
     <img class="signature-img" src="${signatureData}" />
-    <p class="meta">الموقّع: ${signerName}${signerEmail ? ` (${signerEmail})` : ""}</p>
+    <p class="meta">الموقّع: ${xss(signerName)}${signerEmail ? ` (${xss(signerEmail)})` : ""}</p>
     <p class="meta">تاريخ التوقيع: ${dateStr}</p>
     <p class="meta">عنوان IP: ${ip}</p>
   </div>
@@ -2299,8 +2306,8 @@ export async function registerRoutes(
         messages: [{ role: "user", content: userMessage }],
       });
 
-      const textBlock = message.content.find((b: any) => b.type === "text");
-      const result = textBlock ? (textBlock as any).text : "";
+      const textBlock = message.content.find((b) => b.type === "text");
+      const result = textBlock?.type === "text" ? textBlock.text : "";
 
       // Strip markdown code fences if any
       const cleaned = result.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
@@ -2342,8 +2349,8 @@ export async function registerRoutes(
       });
 
       for await (const event of stream) {
-        if (event.type === "content_block_delta" && (event.delta as any).type === "text_delta") {
-          res.write(`data: ${JSON.stringify({ text: (event.delta as any).text })}\n\n`);
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`);
         }
       }
 
