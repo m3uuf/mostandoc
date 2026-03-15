@@ -628,16 +628,19 @@ export class DatabaseStorage implements IStorage {
   async getDashboardStats(userId: string) {
     const [clientResult] = await db.select({ count: count() }).from(clients).where(eq(clients.userId, userId));
     const [contractResult] = await db.select({ count: count() }).from(contracts)
-      .where(and(eq(contracts.userId, userId), eq(contracts.status, "active")));
+      .where(eq(contracts.userId, userId));
     const pendingStats = await this.getPendingInvoiceStats(userId);
+    const [invoiceResult] = await db.select({ count: count() }).from(invoices)
+      .where(eq(invoices.userId, userId));
     const [projectResult] = await db.select({ count: count() }).from(projects)
-      .where(and(eq(projects.userId, userId), eq(projects.status, "in_progress")));
+      .where(eq(projects.userId, userId));
 
     return {
       clientCount: clientResult.count,
       activeContractCount: contractResult.count,
       pendingInvoiceCount: pendingStats.count,
       pendingInvoiceTotal: pendingStats.total,
+      totalInvoiceCount: invoiceResult.count,
       activeProjectCount: projectResult.count,
     };
   }

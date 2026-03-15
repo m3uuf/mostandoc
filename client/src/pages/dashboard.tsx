@@ -36,6 +36,7 @@ export default function Dashboard() {
     activeContractCount: number;
     pendingInvoiceCount: number;
     pendingInvoiceTotal: string;
+    totalInvoiceCount: number;
     activeProjectCount: number;
   }>({ queryKey: ["/api/dashboard/stats"] });
 
@@ -49,9 +50,9 @@ export default function Dashboard() {
 
   const statCards = [
     { title: "إجمالي العملاء", value: stats?.clientCount || 0, icon: Users, color: "text-blue-500" },
-    { title: "العقود النشطة", value: stats?.activeContractCount || 0, icon: FileText, color: "text-green-500" },
-    { title: "فواتير معلقة", value: `${stats?.pendingInvoiceCount || 0} (${Number(stats?.pendingInvoiceTotal || 0).toLocaleString("ar-SA")} ر.س)`, icon: Receipt, color: "text-amber-500" },
-    { title: "المشاريع الجارية", value: stats?.activeProjectCount || 0, icon: FolderKanban, color: "text-purple-500" },
+    { title: "إجمالي العقود", value: stats?.activeContractCount || 0, icon: FileText, color: "text-green-500" },
+    { title: "إجمالي الفواتير", value: stats?.totalInvoiceCount || 0, icon: Receipt, color: "text-amber-500" },
+    { title: "إجمالي المشاريع", value: stats?.activeProjectCount || 0, icon: FolderKanban, color: "text-purple-500" },
   ];
 
   return (

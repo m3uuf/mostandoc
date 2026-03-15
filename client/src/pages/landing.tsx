@@ -617,6 +617,8 @@ export default function Landing() {
               <li><button onClick={() => scrollTo("features")}>المميزات</button></li>
               <li><button onClick={() => scrollTo("pricing")}>الأسعار</button></li>
               <li><a href="mailto:info@mostandoc.com">تواصل معنا</a></li>
+              <li><a href="/privacy">سياسة الخصوصية</a></li>
+              <li><a href="/terms">شروط الاستخدام</a></li>
             </ul>
             <p className="l-footer-copy">© {new Date().getFullYear()} مستندك. جميع الحقوق محفوظة.</p>
           </div>

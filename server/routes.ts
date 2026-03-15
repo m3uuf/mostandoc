@@ -224,7 +224,7 @@ export async function registerRoutes(
       const user = await getUserById(getUserId(req));
       if (!user) return res.status(401).json({ message: "المستخدم غير موجود" });
       const { passwordHash, ...safeUser } = user;
-      res.json(safeUser);
+      res.json({ ...safeUser, hasPassword: !!passwordHash });
     } catch (error) {
       console.error("Get user error:", error);
       res.status(500).json({ message: "فشل في تحميل بيانات المستخدم" });
@@ -291,6 +291,34 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Reset password error:", error);
       res.status(500).json({ message: "فشل في إعادة تعيين كلمة المرور" });
+    }
+  });
+
+  app.post("/api/auth/change-password", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "كلمة المرور الحالية والجديدة مطلوبة" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل" });
+      }
+      const userId = getUserId(req);
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user || !user.passwordHash) {
+        return res.status(400).json({ message: "لا يمكن تغيير كلمة المرور لحسابات التسجيل الاجتماعي" });
+      }
+      const valid = await verifyPassword(currentPassword, user.passwordHash);
+      if (!valid) {
+        return res.status(400).json({ message: "كلمة المرور الحالية غير صحيحة" });
+      }
+      const bcrypt = await import("bcryptjs");
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+      res.json({ success: true, message: "تم تغيير كلمة المرور بنجاح" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "فشل في تغيير كلمة المرور" });
     }
   });
 

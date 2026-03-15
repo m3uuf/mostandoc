@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
-import { Settings, Loader2, Sun, Moon, CreditCard, CheckCircle, AlertCircle, Clock, Check, X } from "lucide-react";
+import { Settings, Loader2, Sun, Moon, CreditCard, CheckCircle, AlertCircle, Clock, Check, X, Lock } from "lucide-react";
 import type { Profile, Subscription } from "@shared/schema";
 import { usePlanLimits } from "@/hooks/use-plan-limits";
 import { PLANS, PRO_PRICING_TIERS, getProPrice } from "@shared/plans";
@@ -47,6 +47,51 @@ export default function SettingsPage() {
     lastName: user?.lastName || "",
     email: user?.email || "",
   });
+
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+
+  const changePassword = useMutation({
+    mutationFn: async (data: { currentPassword: string; newPassword: string }) => {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.message || "فشل في تغيير كلمة المرور");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "تم تغيير كلمة المرور بنجاح" });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleChangePassword = () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      toast({ title: "جميع الحقول مطلوبة", variant: "destructive" });
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      toast({ title: "كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل", variant: "destructive" });
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({ title: "كلمة المرور الجديدة غير متطابقة", variant: "destructive" });
+      return;
+    }
+    changePassword.mutate({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword });
+  };
 
   const [billingForm, setBillingForm] = useState({
     companyName: profile?.companyName || "",
@@ -146,6 +191,23 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {(user as any)?.hasPassword && (
+            <Card className="mt-4">
+              <CardHeader><CardTitle className="flex items-center gap-2"><Lock className="h-5 w-5" /> تغيير كلمة المرور</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label>كلمة المرور الحالية</Label><Input type="password" dir="ltr" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} data-testid="input-current-password" /></div>
+                  <div />
+                  <div><Label>كلمة المرور الجديدة</Label><Input type="password" dir="ltr" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} placeholder="6 أحرف على الأقل" data-testid="input-new-password" /></div>
+                  <div><Label>تأكيد كلمة المرور</Label><Input type="password" dir="ltr" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} data-testid="input-confirm-password" /></div>
+                </div>
+                <Button onClick={handleChangePassword} disabled={changePassword.isPending} data-testid="button-change-password">
+                  {changePassword.isPending && <Loader2 className="ml-2 h-4 w-4 animate-spin" />} تغيير كلمة المرور
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="subscription">

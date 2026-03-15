@@ -73,7 +73,13 @@ export default function NotificationsPage() {
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : !notifications.length ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">لا توجد إشعارات</CardContent></Card>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Bell className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+            <p className="text-muted-foreground font-medium mb-2">لا توجد إشعارات</p>
+            <p className="text-sm text-muted-foreground">ستظهر هنا تنبيهات الفواتير المتأخرة، العقود المنتهية، والرسائل الجديدة.</p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2">
         <div className="space-y-2">
