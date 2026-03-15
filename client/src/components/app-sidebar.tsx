@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, FileText, Receipt, FolderKanban, Globe, Settings, Bell, LogOut, ChevronDown, FilePenLine, ShieldCheck, LayoutTemplate
 } from "lucide-react";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem,

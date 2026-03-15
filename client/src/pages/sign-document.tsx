@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, CheckCircle, PenTool, FileText, Type, Calendar, Hash } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 import type { Document, DocumentField } from "@shared/schema";
 import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType, FIELD_CONFIG } from "@/components/editor/fillable-fields-extension";
 

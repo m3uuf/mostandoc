@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 
 const features = [
   { icon: "💼", color: "rgba(232,117,42,0.12)", iconColor: "#E8752A", title: "إدارة العملاء", desc: "أضف وتابع عملاءك بسهولة. بيانات الاتصال، الحالة، الملاحظات، وسجل كامل للتعاملات." },

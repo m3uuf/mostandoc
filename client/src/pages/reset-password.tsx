@@ -9,7 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Loader2, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 
 export default function ResetPasswordPage() {
   const search = useSearch();

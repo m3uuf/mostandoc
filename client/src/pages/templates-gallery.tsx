@@ -12,7 +12,7 @@ import {
   LayoutTemplate, Eye, ArrowLeft, Loader2, FileText, Handshake, ReceiptText,
   Sparkles, Lock,
 } from "lucide-react";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 
 const categoryLabels: Record<string, string> = {
   all: "الكل",

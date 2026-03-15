@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 
 
 export default function VerifyEmailPage() {

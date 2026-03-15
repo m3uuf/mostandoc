@@ -10,7 +10,7 @@ import { Loader2, Eye, EyeOff, Mail, ArrowRight } from "lucide-react";
 import { SiGoogle, SiFacebook, SiApple } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import logoIcon from "@assets/Asset_1@4x_1771471809797.png";
+const logoIcon = "/favicon.png";
 
 type AuthMode = "login" | "register" | "forgot";
 
