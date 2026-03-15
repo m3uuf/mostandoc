@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mostandoc-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5000,
+      "env": {
+        "DATABASE_URL": "postgresql://m3uuf@localhost:5432/mostandoc",
+        "SESSION_SECRET": "mostandoc-local-dev-session-secret-key-2026",
+        "PORT": "5000",
+        "NODE_ENV": "development"
+      }
+    }
+  ]
+}
