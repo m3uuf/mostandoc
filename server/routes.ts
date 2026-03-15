@@ -2240,7 +2240,7 @@ export async function registerRoutes(
           (SELECT COUNT(*) FROM profiles) as total_profiles,
 
           -- Subscriptions
-          (SELECT COUNT(*) FROM users WHERE subscription_plan IS NOT NULL AND subscription_plan != 'free') as paid_subscriptions
+          (SELECT COUNT(*) FROM subscriptions WHERE plan IS NOT NULL AND plan != 'free' AND status = 'active') as paid_subscriptions
       `);
 
       // Daily signups for last 30 days
