@@ -6,10 +6,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Loader2, Eye, EyeOff, Mail, ArrowRight } from "lucide-react";
+import { Loader2, Eye, EyeOff, Mail, ArrowRight, MessageCircle } from "lucide-react";
 import { SiGoogle, SiFacebook, SiApple } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import WhatsAppButton from "@/components/whatsapp-button";
 const logoIcon = "/favicon.png";
 
 type AuthMode = "login" | "register" | "forgot";
@@ -115,7 +116,8 @@ export default function AuthPage() {
   const subtitle = mode === "login" ? "أدخل بياناتك لتسجيل الدخول" : mode === "register" ? "أنشئ حسابك للبدء في إدارة أعمالك" : "أدخل بريدك الإلكتروني لإعادة تعيين كلمة المرور";
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex relative">
+      <WhatsAppButton />
       <div className="hidden lg:flex lg:flex-1 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-bl from-[#3B5FE5] via-[#2a45b0] to-[#1a2d6e]" />
         <div className="relative flex flex-col items-center justify-center w-full p-12 text-white text-center">

@@ -32,6 +32,7 @@ import TemplatesGallery from "@/pages/templates-gallery";
 import ImpersonationBanner from "@/components/admin/impersonation-banner";
 import TrackingScriptsInjector from "@/components/tracking-scripts-injector";
 import GlobalSearch from "@/components/global-search";
+import WhatsAppButton from "@/components/whatsapp-button";
 import { Loader2 } from "lucide-react";
 
 function AuthenticatedLayout() {
@@ -51,6 +52,7 @@ function AuthenticatedLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
           </header>
           <ImpersonationBanner />
+          <WhatsAppButton />
           <main className="flex-1 overflow-auto">
             <Switch>
               <Route path="/dashboard" component={Dashboard} />
