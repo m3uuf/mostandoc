@@ -1256,7 +1256,8 @@ export async function registerRoutes(
       if (!fileUrl) return res.status(400).json({ message: "Missing url parameter" });
 
       const { default: fetch } = await import("node-fetch");
-      const fullUrl = fileUrl.startsWith("http") ? fileUrl : `http://localhost:5000${fileUrl}`;
+      const baseUrl = process.env.NODE_ENV === "production" ? "https://app.mostandoc.com" : `http://localhost:${process.env.PORT || 5000}`;
+      const fullUrl = fileUrl.startsWith("http") ? fileUrl : `${baseUrl}${fileUrl}`;
       const pdfRes = await fetch(fullUrl);
       if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
       const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());

@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /clients
+Disallow: /contracts
+Disallow: /invoices
+Disallow: /projects
+Disallow: /documents
+Disallow: /settings
+Disallow: /notifications
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://mostandoc.com/sitemap.xml
