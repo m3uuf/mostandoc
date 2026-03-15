@@ -105,11 +105,17 @@ function Router() {
     );
   }
 
-  // If not logged in, redirect to mostandoc.com (main site)
+  // If not logged in on app.mostandoc.com, redirect immediately to mostandoc.com
   const isAppSubdomain = window.location.hostname.startsWith("app.");
-  const mainSiteUrl = isAppSubdomain
-    ? window.location.origin.replace("app.", "")
-    : "https://mostandoc.com";
+  if (isAppSubdomain) {
+    const mainSiteUrl = window.location.origin.replace("app.", "");
+    window.location.href = mainSiteUrl;
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <Switch>
@@ -118,28 +124,10 @@ function Router() {
       <Route path="/sign/:token" component={SignDocument} />
       <Route path="/auth/reset-password" component={ResetPasswordPage} />
       <Route path="/auth/verify-email" component={VerifyEmailPage} />
+      <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
-      <Route path="/">{() => {
-        if (isAppSubdomain) {
-          window.location.href = mainSiteUrl;
-          return null;
-        }
-        return <Landing />;
-      }}</Route>
-      <Route path="/dashboard/(.*)">{() => {
-        if (isAppSubdomain) {
-          window.location.href = mainSiteUrl;
-          return null;
-        }
-        return <Redirect to="/auth" />;
-      }}</Route>
-      <Route path="/dashboard">{() => {
-        if (isAppSubdomain) {
-          window.location.href = mainSiteUrl;
-          return null;
-        }
-        return <Redirect to="/auth" />;
-      }}</Route>
+      <Route path="/dashboard/(.*)"><Redirect to="/auth" /></Route>
+      <Route path="/dashboard"><Redirect to="/auth" /></Route>
       <Route component={NotFound} />
     </Switch>
   );
