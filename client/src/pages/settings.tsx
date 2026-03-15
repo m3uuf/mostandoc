@@ -9,14 +9,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
-import { Settings, Loader2, Sun, Moon, CreditCard, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { Settings, Loader2, Sun, Moon, CreditCard, CheckCircle, AlertCircle, Clock, Check, X } from "lucide-react";
 import type { Profile, Subscription } from "@shared/schema";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import { PLANS, PRO_PRICING_TIERS, getProPrice } from "@shared/plans";
+import { Slider } from "@/components/ui/slider";
+import { Progress } from "@/components/ui/progress";
 
 const PLAN_NAMES: Record<string, string> = {
   free: "مجاني",
   starter: "المبتدئ",
   pro: "المحترف",
-  business: "الأعمال",
 };
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -33,7 +36,11 @@ export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { data: profile } = useQuery<Profile | null>({ queryKey: ["/api/profile"] });
   const { data: subscription } = useQuery<Subscription & { plan: string; status: string }>({ queryKey: ["/api/subscription"] });
+  const { data: planData, isLoading: planLoading } = usePlanLimits();
   const [portalLoading, setPortalLoading] = useState(false);
+  const [proClientCount, setProClientCount] = useState(100);
+  const proMonthlyPrice = getProPrice(proClientCount);
+  const proPricePerClient = Math.round(proMonthlyPrice / proClientCount);
 
   const [accountForm, setAccountForm] = useState({
     firstName: user?.firstName || "",
@@ -101,11 +108,15 @@ export default function SettingsPage() {
 
   const handleSubscribe = async (planId: string) => {
     try {
-      const res = await apiRequest("POST", "/api/subscription/checkout", { plan: planId });
+      const body: any = { plan: planId };
+      if (planId === "pro") {
+        body.clientLimit = proClientCount;
+      }
+      const res = await apiRequest("POST", "/api/subscription/checkout", body);
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (e) {
-      toast({ title: "فشل في إنشاء جلسة الدفع", variant: "destructive" });
+      toast({ title: "حدث خطأ", variant: "destructive" });
     }
   };
 
@@ -142,7 +153,8 @@ export default function SettingsPage() {
             <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5" /> الاشتراك</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               {subscription && subscription.status !== "inactive" && subscription.plan !== "free" ? (
-                <div className="space-y-4">
+                /* ===== Active subscription view ===== */
+                <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 rounded-md border">
                       <p className="text-sm text-muted-foreground mb-1">الباقة الحالية</p>
@@ -165,33 +177,202 @@ export default function SettingsPage() {
                       </p>
                     </div>
                   )}
+
+                  {/* Usage bars */}
+                  {planData && (
+                    <div className="p-4 rounded-md border space-y-4">
+                      <p className="font-medium text-sm">الاستخدام</p>
+                      {([
+                        { key: "clients" as const, label: "العملاء" },
+                        { key: "invoices" as const, label: "الفواتير" },
+                        { key: "contracts" as const, label: "العقود" },
+                        { key: "projects" as const, label: "المشاريع" },
+                        { key: "documents" as const, label: "المستندات" },
+                      ]).map(({ key, label }) => {
+                        const used = planData.usage[key];
+                        const limit = planData.limits[key];
+                        const isUnlimited = !limit || limit === Infinity;
+                        const percent = isUnlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span>{label}</span>
+                              <span className="text-muted-foreground">
+                                {used} / {isUnlimited ? "غير محدود" : limit}
+                              </span>
+                            </div>
+                            {!isUnlimited && <Progress value={percent} className="h-2" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Feature badges */}
+                  {planData && (
+                    <div className="flex flex-wrap gap-3">
+                      {([
+                        { key: "signatures" as const, label: "التوقيع الإلكتروني" },
+                        { key: "ai" as const, label: "الذكاء الاصطناعي" },
+                        { key: "publicProfile" as const, label: "الصفحة العامة" },
+                      ]).map(({ key, label }) => (
+                        <span
+                          key={key}
+                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                            planData.features[key]
+                              ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {planData.features[key] ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <Button onClick={openPortal} disabled={portalLoading} data-testid="button-manage-subscription">
                     {portalLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                     إدارة الاشتراك
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-md border text-center">
-                    <p className="text-muted-foreground mb-2">لا يوجد اشتراك نشط</p>
-                    <p className="text-sm text-muted-foreground">اختر باقة للبدء مع تجربة مجانية 14 يوم</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {[
-                      { id: "starter", name: "المبتدئ", price: "29" },
-                      { id: "pro", name: "المحترف", price: "59" },
-                      { id: "business", name: "الأعمال", price: "99" },
-                    ].map((plan) => (
-                      <Card key={plan.id} className={plan.id === "pro" ? "border-primary" : ""}>
-                        <CardContent className="pt-4 text-center space-y-3">
-                          <p className="font-bold">{plan.name}</p>
-                          <p><span className="text-2xl font-bold">{plan.price}</span> <span className="text-sm text-muted-foreground">ر.س/شهرياً</span></p>
-                          <Button variant={plan.id === "pro" ? "default" : "outline"} className="w-full" onClick={() => handleSubscribe(plan.id)} data-testid={`button-subscribe-${plan.id}`}>
-                            اشترك الآن
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))}
+                /* ===== Free / no subscription view ===== */
+                <div className="space-y-6">
+                  {/* Free plan usage bars */}
+                  {planData && (
+                    <div className="p-4 rounded-md border space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">الباقة المجانية</p>
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">الباقة الحالية</span>
+                      </div>
+                      {([
+                        { key: "clients" as const, label: "العملاء" },
+                        { key: "invoices" as const, label: "الفواتير" },
+                        { key: "contracts" as const, label: "العقود" },
+                        { key: "projects" as const, label: "المشاريع" },
+                        { key: "documents" as const, label: "المستندات" },
+                      ]).map(({ key, label }) => {
+                        const used = planData.usage[key];
+                        const limit = planData.limits[key];
+                        const isUnlimited = !limit || limit === Infinity;
+                        const percent = isUnlimited ? 0 : Math.min(100, Math.round((used / limit) * 100));
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span>{label}</span>
+                              <span className="text-muted-foreground">
+                                {used} / {isUnlimited ? "غير محدود" : limit}
+                              </span>
+                            </div>
+                            {!isUnlimited && (
+                              <Progress
+                                value={percent}
+                                className="h-2"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-sm text-muted-foreground text-center">اختر باقة للترقية مع تجربة مجانية 14 يوم</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Starter card */}
+                    <Card>
+                      <CardContent className="pt-6 space-y-4">
+                        <div className="text-center">
+                          <p className="font-bold text-lg">المبتدئ</p>
+                          <p className="mt-2">
+                            <span className="text-3xl font-bold">{PLANS.starter.priceHalalah! / 100}</span>{" "}
+                            <span className="text-sm text-muted-foreground">ر.س/شهرياً</span>
+                          </p>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">العملاء:</span> <span className="font-medium">{PLANS.starter.limits.clients}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">الفواتير:</span> <span className="font-medium">{PLANS.starter.limits.invoices}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">العقود:</span> <span className="font-medium">{PLANS.starter.limits.contracts}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">المشاريع:</span> <span className="font-medium">{PLANS.starter.limits.projects}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">المستندات:</span> <span className="font-medium">{PLANS.starter.limits.documents}</span></div>
+                        </div>
+                        <div className="space-y-1.5 text-sm border-t pt-3">
+                          <div className="flex items-center gap-1.5 text-green-600"><Check className="h-4 w-4" /> التوقيع الإلكتروني</div>
+                          <div className="flex items-center gap-1.5 text-green-600"><Check className="h-4 w-4" /> صفحة عامة</div>
+                          <div className="flex items-center gap-1.5 text-muted-foreground"><X className="h-4 w-4" /> الذكاء الاصطناعي</div>
+                        </div>
+                        <Button variant="outline" className="w-full" onClick={() => handleSubscribe("starter")} data-testid="button-subscribe-starter">
+                          اشترك الآن
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    {/* Pro card */}
+                    <Card className="border-primary border-2 relative">
+                      <CardContent className="pt-6 space-y-4">
+                        <div className="text-center">
+                          <p className="font-bold text-lg text-primary">المحترف</p>
+                          <p className="mt-2">
+                            <span className="text-3xl font-bold">{(proMonthlyPrice / 100).toFixed(0)}</span>{" "}
+                            <span className="text-sm text-muted-foreground">ر.س/شهرياً</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {(proPricePerClient / 100).toFixed(1)} ر.س/عميل
+                          </p>
+                        </div>
+
+                        {/* Client count slider */}
+                        <div className="space-y-3 p-3 rounded-md bg-muted/50">
+                          <div className="flex justify-between text-sm">
+                            <span>عدد العملاء</span>
+                            <span className="font-bold">{proClientCount} عميل</span>
+                          </div>
+                          <Slider
+                            value={[proClientCount]}
+                            onValueChange={(v) => setProClientCount(v[0])}
+                            min={50}
+                            max={1000}
+                            step={10}
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>50</span>
+                            <span>1000</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {PRO_PRICING_TIERS.map((tier) => (
+                              <button
+                                key={tier.clients}
+                                onClick={() => setProClientCount(tier.clients)}
+                                className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                                  proClientCount === tier.clients
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "hover:bg-muted border-border"
+                                }`}
+                              >
+                                {tier.clients}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">العملاء:</span> <span className="font-medium">{proClientCount}</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">الفواتير:</span> <span className="font-medium">غير محدود</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">العقود:</span> <span className="font-medium">غير محدود</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">المشاريع:</span> <span className="font-medium">غير محدود</span></div>
+                          <div className="flex items-center gap-2"><span className="text-muted-foreground">المستندات:</span> <span className="font-medium">غير محدود</span></div>
+                        </div>
+                        <div className="space-y-1.5 text-sm border-t pt-3">
+                          <div className="flex items-center gap-1.5 text-green-600"><Check className="h-4 w-4" /> التوقيع الإلكتروني</div>
+                          <div className="flex items-center gap-1.5 text-green-600"><Check className="h-4 w-4" /> الذكاء الاصطناعي</div>
+                          <div className="flex items-center gap-1.5 text-green-600"><Check className="h-4 w-4" /> صفحة عامة</div>
+                        </div>
+                        <Button className="w-full" onClick={() => handleSubscribe("pro")} data-testid="button-subscribe-pro">
+                          اشترك الآن
+                        </Button>
+                      </CardContent>
+                    </Card>
                   </div>
                 </div>
               )}

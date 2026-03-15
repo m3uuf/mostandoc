@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import UpgradePrompt from "@/components/upgrade-prompt";
 import { Plus, Search, Pencil, Trash2, Loader2, Users, Eye, FileText, Download, CheckCircle, Clock, Send } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import type { Client, Document } from "@shared/schema";
@@ -19,6 +21,7 @@ const statusColors: Record<string, "default" | "secondary" | "destructive"> = { 
 
 export default function ClientsPage() {
   const { toast } = useToast();
+  const { canCreate, usage, limits } = usePlanLimits();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -123,10 +126,14 @@ export default function ClientsPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users className="h-6 w-6" /> العملاء
         </h1>
-        <Button onClick={openCreate} data-testid="button-add-client">
+        <Button onClick={openCreate} disabled={!canCreate("clients")} data-testid="button-add-client">
           <Plus className="ml-2 h-4 w-4" /> إضافة عميل
         </Button>
       </div>
+
+      {!canCreate("clients") && limits && usage && (
+        <UpgradePrompt type="limit" resource="العملاء" current={usage.clients} limit={limits.clients} />
+      )}
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-0">

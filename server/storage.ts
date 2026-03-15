@@ -57,6 +57,7 @@ export interface IStorage {
   getClientCount(userId: string): Promise<number>;
 
   getContracts(userId: string, pagination: PaginationParams, status?: string, search?: string): Promise<PaginatedResult<Contract & { clientName?: string | null }>>;
+  getContractCount(userId: string): Promise<number>;
   getContract(id: string, userId: string): Promise<Contract | undefined>;
   createContract(data: InsertContract): Promise<Contract>;
   updateContract(id: string, userId: string, data: Partial<InsertContract>): Promise<Contract | undefined>;
@@ -72,6 +73,7 @@ export interface IStorage {
   getNextInvoiceNumber(userId: string): Promise<string>;
   getPendingInvoiceStats(userId: string): Promise<{ count: number; total: string }>;
   getOverdueInvoices(userId: string): Promise<(Invoice & { clientName?: string | null })[]>;
+  getInvoiceCount(userId: string): Promise<number>;
 
   getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]>;
   createInvoiceItem(data: InsertInvoiceItem): Promise<InvoiceItem>;
@@ -85,6 +87,7 @@ export interface IStorage {
   updateProject(id: string, userId: string, data: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string, userId: string): Promise<boolean>;
   getActiveProjectCount(userId: string): Promise<number>;
+  getProjectCount(userId: string): Promise<number>;
 
   getProjectTasks(projectId: string): Promise<ProjectTask[]>;
   getProjectTaskById(id: string): Promise<ProjectTask | undefined>;
@@ -136,6 +139,7 @@ export interface IStorage {
   createDocument(data: InsertDocument): Promise<Document>;
   updateDocument(id: string, userId: string, data: Partial<InsertDocument>): Promise<Document | undefined>;
   deleteDocument(id: string, userId: string): Promise<boolean>;
+  getDocumentCount(userId: string): Promise<number>;
 
   getDocumentFields(documentId: string): Promise<DocumentField[]>;
   createDocumentField(data: InsertDocumentField): Promise<DocumentField>;
@@ -281,6 +285,11 @@ export class DatabaseStorage implements IStorage {
     return result.count;
   }
 
+  async getContractCount(userId: string) {
+    const [result] = await db.select({ count: count() }).from(contracts).where(eq(contracts.userId, userId));
+    return result.count;
+  }
+
   async getExpiringContracts(userId: string, days: number) {
     const now = new Date();
     const futureDate = new Date();
@@ -388,6 +397,11 @@ export class DatabaseStorage implements IStorage {
       ));
   }
 
+  async getInvoiceCount(userId: string) {
+    const [result] = await db.select({ count: count() }).from(invoices).where(eq(invoices.userId, userId));
+    return result.count;
+  }
+
   async getInvoiceItems(invoiceId: string) {
     return db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId)).orderBy(invoiceItems.sortOrder);
   }
@@ -465,6 +479,11 @@ export class DatabaseStorage implements IStorage {
   async getActiveProjectCount(userId: string) {
     const [result] = await db.select({ count: count() }).from(projects)
       .where(and(eq(projects.userId, userId), eq(projects.status, "in_progress")));
+    return result.count;
+  }
+
+  async getProjectCount(userId: string) {
+    const [result] = await db.select({ count: count() }).from(projects).where(eq(projects.userId, userId));
     return result.count;
   }
 
@@ -690,6 +709,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(documentSignatures).where(eq(documentSignatures.documentId, id));
     const result = await db.delete(documents).where(and(eq(documents.id, id), eq(documents.userId, userId)));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getDocumentCount(userId: string) {
+    const [result] = await db.select({ count: count() }).from(documents).where(eq(documents.userId, userId));
+    return result.count;
   }
 
   async getDocumentFields(documentId: string) {

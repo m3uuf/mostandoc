@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import UpgradePrompt from "@/components/upgrade-prompt";
 import { Plus, Loader2, Receipt, Pencil, Trash2, X, Download } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
@@ -22,6 +24,7 @@ interface InvoiceFormItem { description: string; quantity: string; unitPrice: st
 
 export default function InvoicesPage() {
   const { toast } = useToast();
+  const { canCreate, usage, limits } = usePlanLimits();
   const [filterStatus, setFilterStatus] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<any>(null);
@@ -171,8 +174,12 @@ export default function InvoicesPage() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold flex items-center gap-2"><Receipt className="h-6 w-6" /> الفواتير</h1>
-        <Button onClick={openCreate} data-testid="button-add-invoice"><Plus className="ml-2 h-4 w-4" /> إنشاء فاتورة</Button>
+        <Button onClick={openCreate} disabled={!canCreate("invoices")} data-testid="button-add-invoice"><Plus className="ml-2 h-4 w-4" /> إنشاء فاتورة</Button>
       </div>
+
+      {!canCreate("invoices") && limits && usage && (
+        <UpgradePrompt type="limit" resource="الفواتير" current={usage.invoices} limit={limits.invoices} />
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         {["all", "draft", "sent", "paid", "overdue", "cancelled"].map((s) => (

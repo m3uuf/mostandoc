@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { apiRequest } from "@/lib/queryClient";
 const logoIcon = "/favicon.png";
 
 const features = [
@@ -13,9 +11,36 @@ const features = [
 ];
 
 const plans = [
-  { planId: "free", name: "مجاني", desc: "للأفراد والمشاريع الصغيرة", price: "0", period: "ر.س/شهر", features: ["حتى 10 عملاء", "5 مستندات شهرياً", "فواتير أساسية", "دعم بالبريد"], cta: "ابدأ مجاناً", popular: false },
-  { planId: "pro", name: "احترافي", desc: "للشركات الصغيرة والمتوسطة", price: "99", period: "ر.س/شهر", features: ["عملاء غير محدودين", "مستندات غير محدودة", "توقيع إلكتروني", "مساعد الذكاء الاصطناعي", "دعم أولوية"], cta: "ابدأ تجربة مجانية", popular: true },
-  { planId: "business", name: "مؤسسي", desc: "للشركات الكبيرة", price: "تواصل معنا", period: "", features: ["كل مميزات الاحترافي", "API مخصص", "تخصيص كامل", "مدير حساب مخصص", "SLA مخصص"], cta: "تواصل معنا", popular: false },
+  {
+    planId: "free",
+    name: "مجاني",
+    desc: "للأفراد والمشاريع الصغيرة",
+    price: "0",
+    period: "ر.س/شهر",
+    features: ["5 عملاء", "10 فواتير", "5 عقود", "3 مشاريع", "دعم بالبريد"],
+    cta: "ابدأ مجاناً",
+    popular: false
+  },
+  {
+    planId: "starter",
+    name: "المبتدئ",
+    desc: "للمستقلين وأصحاب المشاريع",
+    price: "29",
+    period: "ر.س/شهر",
+    features: ["50 عميل", "100 فاتورة", "50 عقد", "20 مشروع", "التوقيع الإلكتروني", "صفحة عامة"],
+    cta: "اشترك الآن",
+    popular: false
+  },
+  {
+    planId: "pro",
+    name: "المحترف",
+    desc: "للشركات الصغيرة والمتوسطة",
+    price: "من 100",
+    period: "ر.س/شهر",
+    features: ["حتى 1000 عميل", "فواتير غير محدودة", "عقود غير محدودة", "مشاريع غير محدودة", "الذكاء الاصطناعي", "تسعير حسب عدد العملاء"],
+    cta: "ابدأ الآن",
+    popular: true
+  },
 ];
 
 const chartHeights = [40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 100];
@@ -53,7 +78,6 @@ function useCounterAnimation(target: number, suffix: string, trigger: boolean) {
 }
 
 export default function Landing() {
-  const { user } = useAuth();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -83,29 +107,8 @@ export default function Landing() {
   }, []);
 
   const handleSubscribe = useCallback(async (planId: string) => {
-    if (planId === "business") {
-      window.location.href = "mailto:info@mostandoc.com";
-      return;
-    }
-    if (!user) {
-      window.location.href = "/auth";
-      return;
-    }
-    if (planId === "free") {
-      window.location.href = "/dashboard";
-      return;
-    }
-    setLoadingPlan(planId);
-    try {
-      const res = await apiRequest("POST", "/api/subscription/checkout", { plan: planId });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      console.error("Checkout error:", e);
-    } finally {
-      setLoadingPlan(null);
-    }
-  }, [user]);
+    window.location.href = "/auth";
+  }, []);
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);

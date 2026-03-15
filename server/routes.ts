@@ -14,6 +14,7 @@ import { logAudit, getClientIp } from "./audit";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
 import { z } from "zod";
+import { PLANS as PLAN_CONFIG, getPlanLimits, getProPrice, type PlanId } from "@shared/plans";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as FacebookStrategy } from "passport-facebook";
@@ -30,11 +31,6 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
-const PLANS: Record<string, { name: string; priceAmount: number }> = {
-  starter: { name: "المبتدئ", priceAmount: 2900 },
-  pro: { name: "المحترف", priceAmount: 5900 },
-  business: { name: "الأعمال", priceAmount: 9900 },
-};
 
 function getPagination(req: Request, defaultLimit = 20) {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -50,6 +46,31 @@ function cleanDates(obj: Record<string, unknown>, dateFields: string[]): Record<
     }
   }
   return cleaned;
+}
+
+async function checkPlanLimit(userId: string, resource: "clients" | "invoices" | "contracts" | "projects" | "documents"): Promise<{ allowed: boolean; current: number; limit: number; plan: string }> {
+  const sub = await storage.getSubscription(userId);
+  const plan = (sub?.plan || "free") as PlanId;
+  const limits = getPlanLimits(plan, sub?.clientLimit || undefined);
+
+  let current = 0;
+  switch(resource) {
+    case "clients": current = await storage.getClientCount(userId); break;
+    case "invoices": current = await storage.getInvoiceCount(userId); break;
+    case "contracts": current = await storage.getContractCount(userId); break;
+    case "projects": current = await storage.getProjectCount(userId); break;
+    case "documents": current = await storage.getDocumentCount(userId); break;
+  }
+
+  const limit = limits[resource];
+  return { allowed: current < limit, current, limit, plan };
+}
+
+async function checkFeatureAccess(userId: string, feature: "signatures" | "ai" | "publicProfile"): Promise<{ allowed: boolean; plan: string }> {
+  const sub = await storage.getSubscription(userId);
+  const plan = (sub?.plan || "free") as PlanId;
+  const limits = getPlanLimits(plan, sub?.clientLimit || undefined);
+  return { allowed: limits[feature], plan };
 }
 
 export async function registerRoutes(
@@ -516,6 +537,13 @@ export async function registerRoutes(
 
   app.post("/api/clients", isAuthenticated, async (req, res) => {
     try {
+      const limitCheck = await checkPlanLimit(getUserId(req), "clients");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من العملاء في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
       const client = await storage.createClient({ ...req.body, userId: getUserId(req) });
       res.json(client);
     } catch (error) {
@@ -571,6 +599,13 @@ export async function registerRoutes(
 
   app.post("/api/contracts", isAuthenticated, async (req, res) => {
     try {
+      const limitCheck = await checkPlanLimit(getUserId(req), "contracts");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من العقود في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
       const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
       const contract = await storage.createContract({ ...cleanedData, userId: getUserId(req) });
       res.json(contract);
@@ -633,6 +668,13 @@ export async function registerRoutes(
 
   app.post("/api/invoices", isAuthenticated, async (req, res) => {
     try {
+      const limitCheck = await checkPlanLimit(getUserId(req), "invoices");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من الفواتير في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
       const { items, ...invoiceData } = req.body;
       const cleanedData = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
       const invoice = await storage.createInvoice({ ...cleanedData, userId: getUserId(req) });
@@ -701,6 +743,13 @@ export async function registerRoutes(
 
   app.post("/api/projects", isAuthenticated, async (req, res) => {
     try {
+      const limitCheck = await checkPlanLimit(getUserId(req), "projects");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من المشاريع في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
       const cleanedData = cleanDates(req.body, ["startDate", "deadline"]);
       const project = await storage.createProject({ ...cleanedData, userId: getUserId(req) });
       res.json(project);
@@ -980,8 +1029,23 @@ export async function registerRoutes(
   app.post("/api/subscription/checkout", isAuthenticated, async (req, res) => {
     try {
       if (!stripe) return res.status(503).json({ message: "خدمة المدفوعات غير مفعّلة" });
-      const { plan } = req.body;
-      if (!PLANS[plan]) return res.status(400).json({ message: "باقة غير صالحة" });
+      const { plan, clientLimit } = req.body;
+      if (plan !== "starter" && plan !== "pro") {
+        return res.status(400).json({ message: "باقة غير صالحة" });
+      }
+
+      const planConfig = PLAN_CONFIG[plan as PlanId];
+      let priceAmount: number;
+      let metadata: Record<string, string>;
+
+      if (plan === "pro") {
+        const cl = parseInt(clientLimit) || 50;
+        priceAmount = getProPrice(cl);
+        metadata = { userId: getUserId(req), plan, clientLimit: String(cl) };
+      } else {
+        priceAmount = planConfig.priceHalalah!;
+        metadata = { userId: getUserId(req), plan };
+      }
 
       const userId = getUserId(req);
       const userObj = await getUserById(userId);
@@ -1010,19 +1074,19 @@ export async function registerRoutes(
         line_items: [{
           price_data: {
             currency: "sar",
-            product_data: { name: `مستندك - ${PLANS[plan].name}` },
-            unit_amount: PLANS[plan].priceAmount,
+            product_data: { name: `مستندك - ${planConfig.nameAr}` },
+            unit_amount: priceAmount,
             recurring: { interval: "month" },
           },
           quantity: 1,
         }],
         subscription_data: {
           trial_period_days: 14,
-          metadata: { userId, plan },
+          metadata,
         },
         success_url: `${baseUrl}/dashboard/settings?subscription=success`,
         cancel_url: `${baseUrl}/dashboard/settings?subscription=cancelled`,
-        metadata: { userId, plan },
+        metadata,
       });
 
       res.json({ url: session.url });
@@ -1049,6 +1113,39 @@ export async function registerRoutes(
       console.error("Portal error:", error);
       res.status(500).json({ message: "فشل في فتح بوابة الإدارة" });
     }
+  });
+
+  app.get("/api/subscription/limits", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    const sub = await storage.getSubscription(userId);
+    const plan = (sub?.plan || "free") as PlanId;
+    const limits = getPlanLimits(plan, sub?.clientLimit || undefined);
+
+    const [clients, invoices, contracts, projects, documents] = await Promise.all([
+      storage.getClientCount(userId),
+      storage.getInvoiceCount(userId),
+      storage.getContractCount(userId),
+      storage.getProjectCount(userId),
+      storage.getDocumentCount(userId),
+    ]);
+
+    res.json({
+      plan,
+      limits: {
+        clients: limits.clients,
+        invoices: limits.invoices,
+        contracts: limits.contracts,
+        projects: limits.projects,
+        documents: limits.documents,
+      },
+      usage: { clients, invoices, contracts, projects, documents },
+      features: {
+        signatures: limits.signatures,
+        ai: limits.ai,
+        publicProfile: limits.publicProfile,
+      },
+      clientLimit: sub?.clientLimit || null,
+    });
   });
 
   app.post("/api/webhooks/stripe", async (req, res) => {
@@ -1080,6 +1177,7 @@ export async function registerRoutes(
           const customerId = subscription.customer as string;
           const plan = (subscription.metadata?.plan) || "starter";
           const priceId = subscription.items.data[0]?.price?.id || null;
+          const clientLimitMeta = subscription.metadata?.clientLimit ? parseInt(subscription.metadata.clientLimit) : null;
 
           await storage.updateSubscriptionByCustomerId(customerId, {
             stripeSubscriptionId: subscription.id,
@@ -1089,6 +1187,7 @@ export async function registerRoutes(
             currentPeriodStart: new Date(subscription.current_period_start * 1000),
             currentPeriodEnd: new Date(subscription.current_period_end * 1000),
             cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            ...(clientLimitMeta ? { clientLimit: clientLimitMeta } : {}),
           });
           break;
         }
@@ -1208,6 +1307,13 @@ export async function registerRoutes(
 
   app.post("/api/documents", isAuthenticated, async (req, res) => {
     try {
+      const limitCheck = await checkPlanLimit(getUserId(req), "documents");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من المستندات في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
       const { title, fileUrl, fileType, docType, content } = req.body;
       if (!title) return res.status(400).json({ message: "العنوان مطلوب" });
       if (docType !== "text" && (!fileUrl || !fileType)) {
@@ -1234,6 +1340,12 @@ export async function registerRoutes(
 
   app.patch("/api/documents/:id", isAuthenticated, async (req, res) => {
     try {
+      if (req.body.status === "sent") {
+        const sigAccess = await checkFeatureAccess(getUserId(req), "signatures");
+        if (!sigAccess.allowed) {
+          return res.status(403).json({ message: "هذه الميزة غير متوفرة في باقتك الحالية", upgrade: true });
+        }
+      }
       const doc = await storage.updateDocument(req.params.id, getUserId(req), req.body);
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
 
@@ -2400,6 +2512,10 @@ export async function registerRoutes(
 
   app.post("/api/ai/generate", isAuthenticated, aiLimiter, async (req: Request, res: Response) => {
     try {
+      const aiAccess = await checkFeatureAccess(getUserId(req), "ai");
+      if (!aiAccess.allowed) {
+        return res.status(403).json({ message: "هذه الميزة غير متوفرة في باقتك الحالية", upgrade: true });
+      }
       if (!anthropic) return res.status(503).json({ message: "خدمة AI غير مفعّلة. أضف ANTHROPIC_API_KEY في المتغيرات البيئية." });
 
       const { action, content, extra } = req.body;
@@ -2436,6 +2552,10 @@ export async function registerRoutes(
   // Streaming endpoint for longer responses
   app.post("/api/ai/stream", isAuthenticated, aiLimiter, async (req: Request, res: Response) => {
     try {
+      const aiAccess = await checkFeatureAccess(getUserId(req), "ai");
+      if (!aiAccess.allowed) {
+        return res.status(403).json({ message: "هذه الميزة غير متوفرة في باقتك الحالية", upgrade: true });
+      }
       if (!anthropic) return res.status(503).json({ message: "خدمة AI غير مفعّلة" });
 
       const { action, content, extra } = req.body;

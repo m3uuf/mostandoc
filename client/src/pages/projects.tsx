@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import UpgradePrompt from "@/components/upgrade-prompt";
 import { Plus, Loader2, FolderKanban, Pencil, Trash2, GripVertical } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import type { Project, ProjectTask, Client } from "@shared/schema";
@@ -22,6 +24,7 @@ const taskStatusLabels: Record<string, string> = { todo: "قائمة المها�
 
 export default function ProjectsPage() {
   const { toast } = useToast();
+  const { canCreate, usage, limits } = usePlanLimits();
   const [filterStatus, setFilterStatus] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState<string | null>(null);
@@ -142,8 +145,12 @@ export default function ProjectsPage() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold flex items-center gap-2"><FolderKanban className="h-6 w-6" /> المشاريع</h1>
-        <Button onClick={openCreate} data-testid="button-add-project"><Plus className="ml-2 h-4 w-4" /> مشروع جديد</Button>
+        <Button onClick={openCreate} disabled={!canCreate("projects")} data-testid="button-add-project"><Plus className="ml-2 h-4 w-4" /> مشروع جديد</Button>
       </div>
+
+      {!canCreate("projects") && limits && usage && (
+        <UpgradePrompt type="limit" resource="المشاريع" current={usage.projects} limit={limits.projects} />
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         {["all", "not_started", "in_progress", "on_hold", "completed"].map((s) => (

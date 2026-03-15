@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import UpgradePrompt from "@/components/upgrade-prompt";
 import { Plus, Loader2, FileText, Pencil, Trash2, Download, ExternalLink } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
@@ -28,6 +30,7 @@ const templates = EDITOR_TEMPLATES.filter(t => t.category === "contract").map(t 
 
 export default function ContractsPage() {
   const { toast } = useToast();
+  const { canCreate, usage, limits } = usePlanLimits();
   const [, navigate] = useLocation();
   const [filterStatus, setFilterStatus] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -173,8 +176,12 @@ export default function ContractsPage() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="h-6 w-6" /> العقود</h1>
-        <Button onClick={openCreate} data-testid="button-add-contract"><Plus className="ml-2 h-4 w-4" /> إنشاء عقد جديد</Button>
+        <Button onClick={openCreate} disabled={!canCreate("contracts")} data-testid="button-add-contract"><Plus className="ml-2 h-4 w-4" /> إنشاء عقد جديد</Button>
       </div>
+
+      {!canCreate("contracts") && limits && usage && (
+        <UpgradePrompt type="limit" resource="العقود" current={usage.contracts} limit={limits.contracts} />
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         {["all", "draft", "active", "completed", "expired", "terminated"].map((s) => (

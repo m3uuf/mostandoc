@@ -18,6 +18,8 @@ import {
   ExternalLink, Loader2, Upload, FileType, PenLine,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import UpgradePrompt from "@/components/upgrade-prompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Document, Client } from "@shared/schema";
 import { Users } from "lucide-react";
@@ -31,6 +33,7 @@ const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondar
 export default function DocumentsPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { canCreate, usage, limits } = usePlanLimits();
   const [createFileOpen, setCreateFileOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -128,17 +131,21 @@ export default function DocumentsPage() {
         <h1 className="text-2xl font-bold" data-testid="text-page-title">المستندات</h1>
         <div className="flex gap-2">
           {/* New text document */}
-          <Button onClick={handleCreateText} disabled={creatingText} data-testid="button-create-text-document">
+          <Button onClick={handleCreateText} disabled={creatingText || !canCreate("documents")} data-testid="button-create-text-document">
             {creatingText ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <PenLine className="ml-2 h-4 w-4" />}
             مستند نصي
           </Button>
           {/* New file document */}
-          <Button variant="outline" onClick={() => setCreateFileOpen(true)} data-testid="button-create-file-document">
+          <Button variant="outline" onClick={() => setCreateFileOpen(true)} disabled={!canCreate("documents")} data-testid="button-create-file-document">
             <Upload className="ml-2 h-4 w-4" />
             رفع ملف
           </Button>
         </div>
       </div>
+
+      {!canCreate("documents") && limits && usage && (
+        <UpgradePrompt type="limit" resource="المستندات" current={usage.documents} limit={limits.documents} />
+      )}
 
       {isLoading ? (
         <div className="text-center py-12">

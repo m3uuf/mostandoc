@@ -193,6 +193,7 @@ export const subscriptions = pgTable("subscriptions", {
   currentPeriodEnd: timestamp("current_period_end"),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  clientLimit: integer("client_limit"),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [index("idx_subscriptions_user_id").on(table.userId), index("idx_subscriptions_stripe_customer_id").on(table.stripeCustomerId)]);
 
