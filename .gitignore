@@ -7,3 +7,5 @@ server/public
 vite.config.ts.*
 *.tar.gz
 uploads/
+client/public/cmaps/
+client/public/standard_fonts/

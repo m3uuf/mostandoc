@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, cp } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -38,6 +38,11 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // Copy pdfjs-dist assets for Arabic PDF rendering
+  console.log("copying pdfjs assets...");
+  await cp("node_modules/pdfjs-dist/cmaps", "dist/public/cmaps", { recursive: true });
+  await cp("node_modules/pdfjs-dist/standard_fonts", "dist/public/standard_fonts", { recursive: true });
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

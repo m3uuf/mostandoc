@@ -44,31 +44,66 @@ const FIELD_TYPES = [
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Trigger onLoad after a brief delay to allow iframe to start loading
-    const timer = setTimeout(() => {
-      setLoading(false);
-      onLoad?.();
-    }, 1000);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    const renderPdf = async () => {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        const pdf = await pdfjsLib.getDocument({
+          url: fileUrl,
+          cMapUrl: "/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/standard_fonts/",
+        }).promise;
+        if (cancelled || !containerRef.current) return;
+        containerRef.current.innerHTML = "";
+        const scale = 1.5;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = "100%";
+          canvas.style.height = "auto";
+          canvas.style.display = "block";
+          if (i < pdf.numPages) canvas.style.marginBottom = "8px";
+          containerRef.current?.appendChild(canvas);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) continue;
+          await (page.render({ canvasContext: ctx, viewport } as any) as any).promise;
+        }
+        if (!cancelled) { setLoading(false); onLoad?.(); }
+      } catch (err: any) {
+        console.error("PDF render error:", err?.message || err);
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    renderPdf();
+    return () => { cancelled = true; };
   }, [fileUrl, onLoad]);
 
+  if (error) {
+    return (
+      <div className="w-full min-h-[400px] md:min-h-[600px] flex items-center justify-center bg-white dark:bg-gray-900">
+        <p className="text-muted-foreground">تعذر عرض ملف PDF</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative w-full" style={{ minHeight: 600 }}>
+    <div className="relative">
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       )}
-      <iframe
-        src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-        className="w-full border-0"
-        style={{ height: 800, minHeight: 600 }}
-        title="PDF Preview"
-        onLoad={() => { setLoading(false); onLoad?.(); }}
-      />
+      <div ref={containerRef} />
     </div>
   );
 }
