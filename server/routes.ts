@@ -165,11 +165,43 @@ export async function registerRoutes(
     },
   });
 
-  app.post("/api/uploads/file", isAuthenticated, upload.single("file"), (req: any, res: any) => {
-    if (!req.file) return res.status(400).json({ error: "لم يتم رفع ملف أو نوع الملف غير مدعوم" });
-    const base64 = req.file.buffer.toString("base64");
-    const fileData = `data:${req.file.mimetype};base64,${base64}`;
-    res.json({ fileData, originalName: req.file.originalname, size: req.file.size, contentType: req.file.mimetype });
+  // Combined file upload + document creation (single multipart request)
+  app.post("/api/documents/upload", isAuthenticated, upload.single("file"), async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "لم يتم رفع ملف أو نوع الملف غير مدعوم" });
+      const limitCheck = await checkPlanLimit(getUserId(req), "documents");
+      if (!limitCheck.allowed) {
+        return res.status(403).json({
+          message: "وصلت للحد الأقصى من المستندات في باقتك الحالية",
+          limit: limitCheck.limit, current: limitCheck.current, upgrade: true
+        });
+      }
+      const title = req.body.title || "مستند بدون عنوان";
+      const base64 = req.file.buffer.toString("base64");
+      const fileData = `data:${req.file.mimetype};base64,${base64}`;
+      const fileType = req.file.mimetype.includes("pdf") ? "pdf" : "image";
+      const crypto = await import("crypto");
+      const shareToken = crypto.randomBytes(16).toString("hex");
+      const doc = await storage.createDocument({
+        userId: getUserId(req),
+        title,
+        fileUrl: null,
+        fileData,
+        fileType,
+        docType: "file",
+        content: null,
+        status: "draft",
+        shareToken,
+      });
+      // Set fileUrl to the API endpoint
+      await storage.updateDocument(doc.id, getUserId(req), { fileUrl: `/api/documents/${doc.id}/file` });
+      doc.fileUrl = `/api/documents/${doc.id}/file`;
+      const { fileData: _, ...safeDoc } = doc as any;
+      res.json(safeDoc);
+    } catch (error) {
+      console.error("Upload document error:", error);
+      res.status(500).json({ message: "فشل في رفع المستند" });
+    }
   });
 
   app.post("/api/auth/register", async (req: Request, res: Response) => {
@@ -1400,29 +1432,21 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const { title, fileData, fileType, docType, content } = req.body;
+      const { title, fileType, docType, content } = req.body;
       if (!title) return res.status(400).json({ message: "العنوان مطلوب" });
-      if (docType !== "text" && (!fileData || !fileType)) {
-        return res.status(400).json({ message: "جميع الحقول مطلوبة" });
-      }
       const crypto = await import("crypto");
       const shareToken = crypto.randomBytes(16).toString("hex");
       const doc = await storage.createDocument({
         userId: getUserId(req),
         title,
         fileUrl: null,
-        fileData: fileData || null,
+        fileData: null,
         fileType: fileType || null,
         docType: docType || "file",
         content: content || null,
         status: "draft",
         shareToken,
       });
-      // Set fileUrl to the API endpoint for serving
-      if (doc.fileData) {
-        await storage.updateDocument(doc.id, getUserId(req), { fileUrl: `/api/documents/${doc.id}/file` });
-        doc.fileUrl = `/api/documents/${doc.id}/file`;
-      }
       const { fileData: _, ...safeDoc } = doc as any;
       res.json(safeDoc);
     } catch (error) {

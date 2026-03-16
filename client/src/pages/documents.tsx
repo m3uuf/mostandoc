@@ -88,21 +88,19 @@ export default function DocumentsPage() {
     if (!title.trim() || !file) return;
     setUploading(true);
     try {
-      // Upload file to get base64 data
+      // Combined upload + create in single multipart request
       const formData = new FormData();
       formData.append("file", file);
-      const uploadRes = await fetch("/api/uploads/file", {
+      formData.append("title", title.trim());
+      const res = await fetch("/api/documents/upload", {
         method: "POST",
         body: formData,
         credentials: "include",
       });
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.error || "فشل في رفع الملف");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "فشل في رفع الملف");
       }
-      const { fileData } = await uploadRes.json();
-      const fileType = file.type.includes("pdf") ? "pdf" : "image";
-      await apiRequest("POST", "/api/documents", { title: title.trim(), fileData, fileType });
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       setCreateFileOpen(false);
       setTitle("");
