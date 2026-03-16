@@ -11,8 +11,10 @@ import { cache, CACHE_TTL } from "./cache";
 import { pool } from "./db";
 import { setupCustomAuth, isAuthenticated, isAdmin, isSuperAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { logAudit, getClientIp } from "./audit";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
+import multer from "multer";
+import fs from "fs";
+import os from "os";
 import { z } from "zod";
 import { PLANS as PLAN_CONFIG, getPlanLimits, getProPrice, type PlanId } from "@shared/plans";
 import passport from "passport";
@@ -152,7 +154,32 @@ export async function registerRoutes(
   app.use("/api/", generalLimiter);
 
   setupCustomAuth(app);
-  registerObjectStorageRoutes(app);
+
+  // ─── File Upload (local storage, replaces Replit Object Storage) ───
+  const uploadsDir = path.join(process.cwd(), "uploads", "documents");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination: uploadsDir,
+      filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname) || ".pdf";
+        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+      },
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+    fileFilter: (_req, file, cb) => {
+      const allowed = ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"];
+      cb(null, allowed.includes(file.mimetype));
+    },
+  });
+
+  app.post("/api/uploads/file", isAuthenticated, upload.single("file"), (req: any, res: any) => {
+    if (!req.file) return res.status(400).json({ error: "لم يتم رفع ملف أو نوع الملف غير مدعوم" });
+    const fileUrl = `/uploads/documents/${req.file.filename}`;
+    res.json({ fileUrl, originalName: req.file.originalname, size: req.file.size, contentType: req.file.mimetype });
+  });
 
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
@@ -1255,37 +1282,43 @@ export async function registerRoutes(
       const fileUrl = req.query.url as string;
       if (!fileUrl) return res.status(400).json({ message: "Missing url parameter" });
 
-      const { default: fetch } = await import("node-fetch");
-      const baseUrl = process.env.NODE_ENV === "production" ? "https://app.mostandoc.com" : `http://localhost:${process.env.PORT || 5000}`;
-      const fullUrl = fileUrl.startsWith("http") ? fileUrl : `${baseUrl}${fileUrl}`;
-      const pdfRes = await fetch(fullUrl);
-      if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
-      const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+      let pdfBuffer: Buffer;
+
+      // Try reading from local filesystem first
+      if (fileUrl.startsWith("/uploads/")) {
+        const localPath = path.join(process.cwd(), fileUrl);
+        if (!fs.existsSync(localPath)) {
+          return res.status(404).json({ message: "PDF not found" });
+        }
+        pdfBuffer = fs.readFileSync(localPath);
+      } else if (fileUrl.startsWith("http")) {
+        const { default: nodeFetch } = await import("node-fetch");
+        const pdfRes = await nodeFetch(fileUrl);
+        if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
+        pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+      } else {
+        return res.status(400).json({ message: "Invalid URL" });
+      }
 
       const { execSync } = await import("child_process");
-      const fs = await import("fs");
-      const os = await import("os");
-      const path = await import("path");
       const tmpDir = os.tmpdir();
       const tmpPdf = path.join(tmpDir, `pdf-${Date.now()}.pdf`);
       fs.writeFileSync(tmpPdf, pdfBuffer);
 
       const outPrefix = path.join(tmpDir, `pdf-img-${Date.now()}`);
-      execSync(`pdftoppm -png -f 1 -l 1 -r 150 "${tmpPdf}" "${outPrefix}"`, { timeout: 10000 });
-
-      const outFile = `${outPrefix}-1.png`;
-      if (!fs.existsSync(outFile)) {
-        const altFile = `${outPrefix}-01.png`;
-        if (!fs.existsSync(altFile)) {
-          fs.unlinkSync(tmpPdf);
-          return res.status(500).json({ message: "PDF conversion failed" });
-        }
-        const imgData = fs.readFileSync(altFile);
+      try {
+        execSync(`pdftoppm -png -f 1 -l 1 -r 150 "${tmpPdf}" "${outPrefix}"`, { timeout: 10000 });
+      } catch {
+        // pdftoppm not available — try using pdf.js or return error
         fs.unlinkSync(tmpPdf);
-        fs.unlinkSync(altFile);
-        res.setHeader("Content-Type", "image/png");
-        res.setHeader("Cache-Control", "public, max-age=3600");
-        return res.send(imgData);
+        return res.status(500).json({ message: "PDF conversion tool (pdftoppm) not available on server" });
+      }
+
+      // pdftoppm outputs -1.png or -01.png depending on version
+      const outFile = fs.existsSync(`${outPrefix}-1.png`) ? `${outPrefix}-1.png` : `${outPrefix}-01.png`;
+      if (!fs.existsSync(outFile)) {
+        fs.unlinkSync(tmpPdf);
+        return res.status(500).json({ message: "PDF conversion failed" });
       }
 
       const imgData = fs.readFileSync(outFile);

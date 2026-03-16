@@ -44,26 +44,37 @@ const FIELD_TYPES = [
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
-  const [imgSrc, setImgSrc] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    const loadPreview = async () => {
+    const renderPdf = async () => {
       try {
-        const res = await fetch(`/api/pdf-preview?url=${encodeURIComponent(fileUrl)}`);
-        if (!res.ok) throw new Error("Failed to render PDF");
-        const blob = await res.blob();
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+        const page = await pdf.getPage(1);
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        await (page.render({ canvasContext: ctx, viewport } as any) as any).promise;
         if (!cancelled) {
-          setImgSrc(URL.createObjectURL(blob));
+          setLoading(false);
           onLoad?.();
         }
       } catch (err: any) {
         console.error("PDF render error:", err?.message || err);
-        if (!cancelled) setError(true);
+        if (!cancelled) { setError(true); setLoading(false); }
       }
     };
-    loadPreview();
+    renderPdf();
     return () => { cancelled = true; };
   }, [fileUrl, onLoad]);
 
@@ -75,15 +86,16 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
     );
   }
 
-  if (!imgSrc) {
-    return (
-      <div className="w-full min-h-[400px] md:min-h-[600px] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  return <img src={imgSrc} alt="PDF" className="w-full h-auto" draggable={false} />;
+  return (
+    <div className="relative">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      <canvas ref={canvasRef} className="w-full h-auto" />
+    </div>
+  );
 }
 
 export default function DocumentEditor() {

@@ -88,18 +88,19 @@ export default function DocumentsPage() {
     if (!title.trim() || !file) return;
     setUploading(true);
     try {
-      const urlRes = await apiRequest("POST", "/api/uploads/request-url", {
-        name: file.name,
-        size: file.size,
-        contentType: file.type,
+      // Upload file directly
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/uploads/file", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
       });
-      const { uploadURL, objectPath } = await urlRes.json();
-      await fetch(uploadURL, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      const fileUrl = objectPath;
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || "فشل في رفع الملف");
+      }
+      const { fileUrl } = await uploadRes.json();
       const fileType = file.type.includes("pdf") ? "pdf" : "image";
       await apiRequest("POST", "/api/documents", { title: title.trim(), fileUrl, fileType });
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
