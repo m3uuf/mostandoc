@@ -63,7 +63,7 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
         </div>
       )}
       <iframe
-        src={fileUrl}
+        src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
         className="w-full border-0"
         style={{ height: 800, minHeight: 600 }}
         title="PDF Preview"
