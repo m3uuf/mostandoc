@@ -43,8 +43,35 @@ const FIELD_TYPES = [
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
+function normalizeFileUrl(url: string): string {
+  if (!url) return url;
+  // Fix protocol-relative URLs from Bubble CDN
+  if (url.startsWith("//")) return "https:" + url;
+  return url;
+}
+
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const normalizedUrl = normalizeFileUrl(fileUrl);
+
+  // Pre-check if the file exists
+  useEffect(() => {
+    fetch(normalizedUrl, { method: "HEAD", credentials: "include" })
+      .then(r => { if (!r.ok) setError(true); })
+      .catch(() => setError(true));
+  }, [normalizedUrl]);
+
+  if (error) {
+    return (
+      <div className="w-full min-h-[400px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <div className="text-center space-y-2">
+          <p className="text-muted-foreground">الملف غير متوفر حالياً</p>
+          <p className="text-xs text-muted-foreground">قد يكون الملف محذوفاً أو تم نقله</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full overflow-hidden" style={{ minHeight: 600 }}>
@@ -55,7 +82,7 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
       )}
       <div style={{ marginTop: -40, height: "calc(100% + 40px)" }}>
         <iframe
-          src={`${fileUrl}#toolbar=0&navpanes=0&view=FitH`}
+          src={`${normalizedUrl}#toolbar=0&navpanes=0&view=FitH`}
           className="w-full border-0"
           style={{ height: 900, minHeight: 700 }}
           title="PDF Preview"
@@ -448,14 +475,14 @@ export default function DocumentEditor() {
             {/* Document image/PDF preview */}
             {doc.fileType === "image" ? (
               <img
-                src={doc.fileUrl}
+                src={normalizeFileUrl(doc.fileUrl)}
                 alt={doc.title}
                 className="w-full h-auto"
                 onLoad={() => setImageLoaded(true)}
                 draggable={false}
               />
             ) : (
-              <PdfRenderer fileUrl={doc.fileUrl} onLoad={() => setImageLoaded(true)} />
+              <PdfRenderer fileUrl={normalizeFileUrl(doc.fileUrl)} onLoad={() => setImageLoaded(true)} />
             )}
 
             {/* Draggable fields */}

@@ -16,8 +16,30 @@ import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType,
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
+function normalizeFileUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("//")) return "https:" + url;
+  return url;
+}
+
 function PdfRenderer({ fileUrl }: { fileUrl: string }) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const normalizedUrl = normalizeFileUrl(fileUrl);
+
+  useEffect(() => {
+    fetch(normalizedUrl, { method: "HEAD" })
+      .then(r => { if (!r.ok) setError(true); })
+      .catch(() => setError(true));
+  }, [normalizedUrl]);
+
+  if (error) {
+    return (
+      <div className="w-full min-h-[400px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <p className="text-muted-foreground">الملف غير متوفر حالياً</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full overflow-hidden" style={{ minHeight: 600 }}>
@@ -28,7 +50,7 @@ function PdfRenderer({ fileUrl }: { fileUrl: string }) {
       )}
       <div style={{ marginTop: -40, height: "calc(100% + 40px)" }}>
         <iframe
-          src={`${fileUrl}#toolbar=0&navpanes=0&view=FitH`}
+          src={`${normalizedUrl}#toolbar=0&navpanes=0&view=FitH`}
           className="w-full border-0"
           style={{ height: 900, minHeight: 700 }}
           title="PDF Preview"

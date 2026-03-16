@@ -1401,18 +1401,24 @@ export async function registerRoutes(
     try {
       const { documentFiles } = await import("@shared/schema");
       const [fileRecord] = await db.select().from(documentFiles).where(eq(documentFiles.documentId, req.params.id));
-      if (!fileRecord) {
-        return res.status(404).json({ message: "الملف غير موجود" });
+      if (fileRecord) {
+        // Serve from document_files table (new uploads)
+        const match = fileRecord.fileData.match(/^data:([^;]+);base64,(.+)$/s);
+        if (!match) return res.status(500).json({ message: "تنسيق الملف غير صالح" });
+        const mimeType = match[1];
+        const buffer = Buffer.from(match[2], "base64");
+        res.setHeader("Content-Type", mimeType);
+        res.setHeader("Content-Length", buffer.length);
+        res.setHeader("Cache-Control", "public, max-age=31536000");
+        return res.send(buffer);
       }
-      // Parse data URL: data:mime;base64,DATA
-      const match = fileRecord.fileData.match(/^data:([^;]+);base64,(.+)$/s);
-      if (!match) return res.status(500).json({ message: "تنسيق الملف غير صالح" });
-      const mimeType = match[1];
-      const buffer = Buffer.from(match[2], "base64");
-      res.setHeader("Content-Type", mimeType);
-      res.setHeader("Content-Length", buffer.length);
-      res.setHeader("Cache-Control", "public, max-age=31536000");
-      res.send(buffer);
+      // Fallback: check if document has an external URL (Bubble CDN)
+      const doc = await storage.getDocument(req.params.id);
+      if (doc?.fileUrl && (doc.fileUrl.startsWith("http") || doc.fileUrl.startsWith("//"))) {
+        const externalUrl = doc.fileUrl.startsWith("//") ? "https:" + doc.fileUrl : doc.fileUrl;
+        return res.redirect(externalUrl);
+      }
+      return res.status(404).json({ message: "الملف غير موجود" });
     } catch (error) {
       console.error("Serve document file error:", error);
       res.status(500).json({ message: "فشل في تحميل الملف" });
