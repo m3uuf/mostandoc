@@ -44,56 +44,31 @@ const FIELD_TYPES = [
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
-    const renderPdf = async () => {
-      try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const pdf = await pdfjsLib.getDocument(fileUrl).promise;
-        const page = await pdf.getPage(1);
-        const scale = 1.5;
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        await (page.render({ canvasContext: ctx, viewport } as any) as any).promise;
-        if (!cancelled) {
-          setLoading(false);
-          onLoad?.();
-        }
-      } catch (err: any) {
-        console.error("PDF render error:", err?.message || err);
-        if (!cancelled) { setError(true); setLoading(false); }
-      }
-    };
-    renderPdf();
-    return () => { cancelled = true; };
+    // Trigger onLoad after a brief delay to allow iframe to start loading
+    const timer = setTimeout(() => {
+      setLoading(false);
+      onLoad?.();
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [fileUrl, onLoad]);
 
-  if (error) {
-    return (
-      <div className="w-full min-h-[400px] md:min-h-[600px] flex items-center justify-center bg-white dark:bg-gray-900">
-        <p className="text-muted-foreground">تعذر عرض ملف PDF</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative">
+    <div className="relative w-full" style={{ minHeight: 600 }}>
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       )}
-      <canvas ref={canvasRef} className="w-full h-auto" />
+      <iframe
+        src={fileUrl}
+        className="w-full border-0"
+        style={{ height: 800, minHeight: 600 }}
+        title="PDF Preview"
+        onLoad={() => { setLoading(false); onLoad?.(); }}
+      />
     </div>
   );
 }
