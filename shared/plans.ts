@@ -84,11 +84,16 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
  * Get the plan limits for a given plan.
  * For pro plans, pass clientCount to set the actual client limit.
  */
-export function getPlanLimits(planId: PlanId, clientCount?: number): PlanLimits {
-  const plan = PLANS[planId];
+export function getPlanLimits(planId: PlanId | string, clientCount?: number): PlanLimits {
+  // Map legacy plan names to current plans
+  const planMap: Record<string, PlanId> = { premium: "pro", basic: "starter" };
+  const resolvedId = (planMap[planId] || planId) as PlanId;
+  const plan = PLANS[resolvedId];
   if (!plan) {
-    throw new Error(`Unknown plan: ${planId}`);
+    // Fallback to pro limits for unknown plans
+    return { ...PLANS.pro.limits };
   }
+  planId = resolvedId;
 
   if (planId === "pro" && clientCount !== undefined) {
     return {
@@ -138,13 +143,15 @@ export function getProPrice(clientCount: number): number {
 /**
  * Get a list of feature flags for a plan, useful for UI display.
  */
-export function getPlanFeatures(planId: PlanId): {
+export function getPlanFeatures(planId: PlanId | string): {
   label: string;
   enabled: boolean;
 }[] {
-  const limits = PLANS[planId]?.limits;
+  const planMap: Record<string, PlanId> = { premium: "pro", basic: "starter" };
+  const resolvedId = (planMap[planId] || planId) as PlanId;
+  const limits = PLANS[resolvedId]?.limits;
   if (!limits) {
-    throw new Error(`Unknown plan: ${planId}`);
+    return getPlanFeatures("pro");
   }
 
   return [
