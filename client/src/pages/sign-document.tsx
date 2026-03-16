@@ -17,60 +17,24 @@ import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType,
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
 function PdfRenderer({ fileUrl }: { fileUrl: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    const renderPdf = async () => {
-      try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const pdf = await pdfjsLib.getDocument({
-          url: fileUrl,
-          cMapUrl: "/cmaps/",
-          cMapPacked: true,
-          standardFontDataUrl: "/standard_fonts/",
-        }).promise;
-        if (cancelled || !containerRef.current) return;
-        containerRef.current.innerHTML = "";
-        const scale = 1.5;
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale });
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          canvas.style.width = "100%";
-          canvas.style.height = "auto";
-          canvas.style.display = "block";
-          if (i < pdf.numPages) canvas.style.marginBottom = "8px";
-          containerRef.current?.appendChild(canvas);
-          const ctx = canvas.getContext("2d");
-          if (!ctx) continue;
-          await (page.render({ canvasContext: ctx, viewport } as any) as any).promise;
-        }
-        if (!cancelled) setLoading(false);
-      } catch (err: any) {
-        console.error("PDF render error:", err?.message || err);
-        if (!cancelled) { setError(true); setLoading(false); }
-      }
-    };
-    renderPdf();
-    return () => { cancelled = true; };
-  }, [fileUrl]);
-
-  if (error) return <div className="w-full min-h-[400px] flex items-center justify-center"><p className="text-muted-foreground">تعذر عرض ملف PDF</p></div>;
-
   return (
-    <div className="relative">
+    <div className="relative w-full overflow-hidden" style={{ minHeight: 600 }}>
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       )}
-      <div ref={containerRef} />
+      <div style={{ marginTop: -40, height: "calc(100% + 40px)" }}>
+        <iframe
+          src={`${fileUrl}#toolbar=0&navpanes=0&view=FitH`}
+          className="w-full border-0"
+          style={{ height: 900, minHeight: 700 }}
+          title="PDF Preview"
+          onLoad={() => setLoading(false)}
+        />
+      </div>
     </div>
   );
 }
