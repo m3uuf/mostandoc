@@ -205,6 +205,7 @@ export const documents = pgTable("documents", {
   docType: text("doc_type").default("file"),
   content: text("content"),
   fileUrl: text("file_url"),
+  fileData: text("file_data"),
   fileType: text("file_type"),
   status: text("status").default("draft"),
   shareToken: varchar("share_token").unique(),

@@ -135,6 +135,7 @@ export interface IStorage {
 
   getDocuments(userId: string): Promise<Document[]>;
   getDocument(id: string, userId: string): Promise<Document | undefined>;
+  getDocumentById(id: string): Promise<Document | undefined>;
   getDocumentByShareToken(shareToken: string): Promise<Document | undefined>;
   createDocument(data: InsertDocument): Promise<Document>;
   updateDocument(id: string, userId: string, data: Partial<InsertDocument>): Promise<Document | undefined>;
@@ -686,6 +687,11 @@ export class DatabaseStorage implements IStorage {
 
   async getDocument(id: string, userId: string) {
     const [doc] = await db.select().from(documents).where(and(eq(documents.id, id), eq(documents.userId, userId)));
+    return doc;
+  }
+
+  async getDocumentById(id: string) {
+    const [doc] = await db.select().from(documents).where(eq(documents.id, id));
     return doc;
   }
 

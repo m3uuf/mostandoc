@@ -88,7 +88,7 @@ export default function DocumentsPage() {
     if (!title.trim() || !file) return;
     setUploading(true);
     try {
-      // Upload file directly
+      // Upload file to get base64 data
       const formData = new FormData();
       formData.append("file", file);
       const uploadRes = await fetch("/api/uploads/file", {
@@ -100,16 +100,16 @@ export default function DocumentsPage() {
         const err = await uploadRes.json().catch(() => ({}));
         throw new Error(err.error || "فشل في رفع الملف");
       }
-      const { fileUrl } = await uploadRes.json();
+      const { fileData } = await uploadRes.json();
       const fileType = file.type.includes("pdf") ? "pdf" : "image";
-      await apiRequest("POST", "/api/documents", { title: title.trim(), fileUrl, fileType });
+      await apiRequest("POST", "/api/documents", { title: title.trim(), fileData, fileType });
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       setCreateFileOpen(false);
       setTitle("");
       setFile(null);
       toast({ title: "تم الإنشاء", description: "تم إنشاء المستند بنجاح" });
-    } catch {
-      toast({ title: "خطأ", description: "فشل في رفع الملف", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "خطأ", description: e?.message || "فشل في رفع الملف", variant: "destructive" });
     } finally {
       setUploading(false);
     }
