@@ -1443,9 +1443,9 @@ export async function registerRoutes(
         shareToken,
       });
       res.json(doc);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Create document error:", error);
-      res.status(500).json({ message: "فشل في إنشاء المستند" });
+      res.status(500).json({ message: "فشل في إنشاء المستند", debug: error?.message || String(error) });
     }
   });
 
