@@ -51,16 +51,71 @@ function normalizeFileUrl(url: string): string {
 }
 
 function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const normalizedUrl = normalizeFileUrl(fileUrl);
 
-  // Pre-check if the file exists
   useEffect(() => {
-    fetch(normalizedUrl, { method: "HEAD", credentials: "include" })
-      .then(r => { if (!r.ok) setError(true); })
-      .catch(() => setError(true));
-  }, [normalizedUrl]);
+    let cancelled = false;
+    const renderPdf = async () => {
+      try {
+        // Fetch PDF as blob and create object URL for iframe
+        const response = await fetch(normalizedUrl, { credentials: "include" });
+        if (!response.ok) { setError(true); setLoading(false); return; }
+        const blob = await response.blob();
+        if (cancelled) return;
+        const objectUrl = URL.createObjectURL(blob);
+
+        // Use pdfjs to get page count & dimensions (not render)
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        const pdf = await pdfjsLib.getDocument({ url: objectUrl }).promise;
+        if (cancelled) { URL.revokeObjectURL(objectUrl); return; }
+
+        // Calculate total height based on page dimensions
+        const containerWidth = containerRef.current?.clientWidth || 800;
+        let totalHeight = 0;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1 });
+          const scale = containerWidth / viewport.width;
+          totalHeight += viewport.height * scale;
+        }
+        // Add some padding between pages
+        totalHeight += (pdf.numPages - 1) * 4;
+
+        if (!cancelled && containerRef.current) {
+          // Create a non-scrolling iframe with the exact height
+          const wrapper = document.createElement("div");
+          wrapper.style.overflow = "hidden";
+          wrapper.style.width = "100%";
+          wrapper.style.height = totalHeight + "px";
+          wrapper.style.marginTop = "-40px"; // Hide toolbar
+          wrapper.style.paddingTop = "0";
+
+          const iframe = document.createElement("iframe");
+          iframe.src = objectUrl + "#toolbar=0&navpanes=0&scrollbar=0&view=FitH";
+          iframe.style.width = "100%";
+          iframe.style.height = (totalHeight + 60) + "px"; // Extra for hidden toolbar
+          iframe.style.border = "none";
+          iframe.style.pointerEvents = "none"; // Let clicks pass through to fields
+          iframe.title = "PDF Preview";
+          iframe.setAttribute("scrolling", "no");
+          iframe.onload = () => { setLoading(false); onLoad?.(); };
+
+          wrapper.appendChild(iframe);
+          containerRef.current.innerHTML = "";
+          containerRef.current.appendChild(wrapper);
+        }
+      } catch (err) {
+        console.error("PDF render error:", err);
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    };
+    renderPdf();
+    return () => { cancelled = true; };
+  }, [normalizedUrl, onLoad]);
 
   if (error) {
     return (
@@ -74,21 +129,13 @@ function PdfRenderer({ fileUrl, onLoad }: { fileUrl: string; onLoad?: () => void
   }
 
   return (
-    <div className="relative w-full overflow-hidden" style={{ minHeight: 600 }}>
+    <div className="relative w-full">
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center z-10">
+        <div className="absolute inset-0 flex items-center justify-center z-10 min-h-[400px]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       )}
-      <div style={{ marginTop: -40, height: "calc(100% + 40px)" }}>
-        <iframe
-          src={`${normalizedUrl}#toolbar=0&navpanes=0&view=FitH`}
-          className="w-full border-0"
-          style={{ height: 900, minHeight: 700 }}
-          title="PDF Preview"
-          onLoad={() => { setLoading(false); onLoad?.(); }}
-        />
-      </div>
+      <div ref={containerRef} style={{ minHeight: loading ? 400 : undefined }} />
     </div>
   );
 }
