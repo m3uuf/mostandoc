@@ -178,7 +178,7 @@ export async function registerRoutes(
       }
       const title = req.body.title || "مستند بدون عنوان";
       const base64 = req.file.buffer.toString("base64");
-      const fileData = `data:${req.file.mimetype};base64,${base64}`;
+      const fileDataStr = `data:${req.file.mimetype};base64,${base64}`;
       const fileType = req.file.mimetype.includes("pdf") ? "pdf" : "image";
       const crypto = await import("crypto");
       const shareToken = crypto.randomBytes(16).toString("hex");
@@ -186,18 +186,23 @@ export async function registerRoutes(
         userId: getUserId(req),
         title,
         fileUrl: null,
-        fileData,
         fileType,
         docType: "file",
         content: null,
         status: "draft",
         shareToken,
       });
+      // Store file data in separate table
+      const { documentFiles } = await import("@shared/schema");
+      await db.insert(documentFiles).values({
+        documentId: doc.id,
+        fileData: fileDataStr,
+        mimeType: req.file.mimetype,
+      });
       // Set fileUrl to the API endpoint
       await storage.updateDocument(doc.id, getUserId(req), { fileUrl: `/api/documents/${doc.id}/file` });
       doc.fileUrl = `/api/documents/${doc.id}/file`;
-      const { fileData: _, ...safeDoc } = doc as any;
-      res.json(safeDoc);
+      res.json(doc);
     } catch (error) {
       console.error("Upload document error:", error);
       res.status(500).json({ message: "فشل في رفع المستند" });
@@ -1360,8 +1365,7 @@ export async function registerRoutes(
   app.get("/api/documents", isAuthenticated, async (req, res) => {
     try {
       const docs = await storage.getDocuments(getUserId(req));
-      // Strip fileData from list response (too large)
-      res.json(docs.map(({ fileData, ...rest }: any) => rest));
+      res.json(docs);
     } catch (error) {
       console.error("Get documents error:", error);
       res.status(500).json({ message: "فشل في تحميل المستندات" });
@@ -1371,7 +1375,7 @@ export async function registerRoutes(
   app.get("/api/clients/:clientId/documents", isAuthenticated, async (req, res) => {
     try {
       const docs = await storage.getDocumentsByClient(req.params.clientId, getUserId(req));
-      res.json(docs.map(({ fileData, ...rest }: any) => rest));
+      res.json(docs);
     } catch (error) {
       console.error("Get client documents error:", error);
       res.status(500).json({ message: "فشل في تحميل مستندات العميل" });
@@ -1384,8 +1388,7 @@ export async function registerRoutes(
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const fields = await storage.getDocumentFields(doc.id);
       const signatures = await storage.getDocumentSignatures(doc.id);
-      const { fileData, ...docWithoutData } = doc as any;
-      res.json({ ...docWithoutData, fields, signatures });
+      res.json({ ...doc, fields, signatures });
     } catch (error) {
       console.error("Get document error:", error);
       res.status(500).json({ message: "فشل في تحميل المستند" });
@@ -1393,23 +1396,16 @@ export async function registerRoutes(
   });
 
   // Serve document file from database (base64 → binary)
+  // Serve document file from document_files table
   app.get("/api/documents/:id/file", async (req, res) => {
     try {
-      // Try authenticated access first, then fall back to public (for sign pages)
-      let doc: any = null;
-      const userId = req.session?.userId;
-      if (userId) {
-        doc = await storage.getDocument(req.params.id, userId);
-      }
-      if (!doc) {
-        // Public access for signing - get document without user check
-        doc = await storage.getDocumentById(req.params.id);
-      }
-      if (!doc || !doc.fileData) {
+      const { documentFiles } = await import("@shared/schema");
+      const [fileRecord] = await db.select().from(documentFiles).where(eq(documentFiles.documentId, req.params.id));
+      if (!fileRecord) {
         return res.status(404).json({ message: "الملف غير موجود" });
       }
       // Parse data URL: data:mime;base64,DATA
-      const match = doc.fileData.match(/^data:([^;]+);base64,(.+)$/);
+      const match = fileRecord.fileData.match(/^data:([^;]+);base64,(.+)$/s);
       if (!match) return res.status(500).json({ message: "تنسيق الملف غير صالح" });
       const mimeType = match[1];
       const buffer = Buffer.from(match[2], "base64");
@@ -1440,15 +1436,13 @@ export async function registerRoutes(
         userId: getUserId(req),
         title,
         fileUrl: null,
-        fileData: null,
         fileType: fileType || null,
         docType: docType || "file",
         content: content || null,
         status: "draft",
         shareToken,
       });
-      const { fileData: _, ...safeDoc } = doc as any;
-      res.json(safeDoc);
+      res.json(doc);
     } catch (error) {
       console.error("Create document error:", error);
       res.status(500).json({ message: "فشل في إنشاء المستند" });
@@ -1642,8 +1636,7 @@ export async function registerRoutes(
       }
       const fields = await storage.getDocumentFields(doc.id);
       const signatures = await storage.getDocumentSignatures(doc.id);
-      const { fileData, ...docWithoutData } = doc as any;
-      res.json({ ...docWithoutData, fields, signatures });
+      res.json({ ...doc, fields, signatures });
     } catch (error) {
       console.error("Get shared document error:", error);
       res.status(500).json({ message: "فشل في تحميل المستند" });

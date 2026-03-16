@@ -205,7 +205,6 @@ export const documents = pgTable("documents", {
   docType: text("doc_type").default("file"),
   content: text("content"),
   fileUrl: text("file_url"),
-  fileData: text("file_data"),
   fileType: text("file_type"),
   status: text("status").default("draft"),
   shareToken: varchar("share_token").unique(),
@@ -219,6 +218,14 @@ export const documents = pgTable("documents", {
   index("idx_documents_share_token").on(table.shareToken),
   index("idx_documents_title").on(table.title),
 ]);
+
+export const documentFiles = pgTable("document_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").notNull().unique(),
+  fileData: text("file_data").notNull(),
+  mimeType: text("mime_type").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const documentFields = pgTable("document_fields", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
