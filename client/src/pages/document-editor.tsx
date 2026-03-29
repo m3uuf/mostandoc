@@ -499,7 +499,6 @@ export default function DocumentEditor() {
               ))}
             </div>
           )}
-        </div>
 
           {/* Notes section */}
           <div className="space-y-2 pt-3 border-t">
