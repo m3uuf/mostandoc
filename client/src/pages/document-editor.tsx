@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -158,6 +159,7 @@ export default function DocumentEditor() {
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigFieldId, setSigFieldId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
   const [imageLoaded, setImageLoaded] = useState(false);
 
   const { data: doc, isLoading } = useQuery<DocumentWithDetails>({
@@ -177,6 +179,7 @@ export default function DocumentEditor() {
   useEffect(() => {
     if (doc) {
       setTitle(doc.title);
+      if (doc.notes) setNotes(doc.notes);
       if (doc.clientId) setSelectedClientId(doc.clientId);
       if (doc.fields?.length) {
         setFields(doc.fields.map((f) => ({
@@ -198,8 +201,8 @@ export default function DocumentEditor() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (title !== doc?.title) {
-        await apiRequest("PATCH", `/api/documents/${documentId}`, { title });
+      if (title !== doc?.title || notes !== (doc?.notes || "")) {
+        await apiRequest("PATCH", `/api/documents/${documentId}`, { title, notes });
       }
       await apiRequest("PUT", `/api/documents/${documentId}/fields`, {
         fields: fields.map((f) => ({
@@ -496,6 +499,18 @@ export default function DocumentEditor() {
               ))}
             </div>
           )}
+        </div>
+
+          {/* Notes section */}
+          <div className="space-y-2 pt-3 border-t">
+            <Label className="text-sm font-semibold">ملاحظات</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="أضف ملاحظات على المستند..."
+              className="text-sm min-h-[80px] resize-none"
+            />
+          </div>
         </div>
 
         {/* Mobile add field button */}

@@ -157,16 +157,60 @@ export default function SignDocument() {
     );
   }
 
-  if (doc.status === "signed" || signed) {
+  if (doc.status === "signed" || signed || doc.isSigned) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <Card className="w-full max-w-md">
-          <CardContent className="py-12 text-center" data-testid="sign-success">
-            <CheckCircle className="h-16 w-16 mx-auto text-green-500 mb-4" />
-            <h2 className="text-xl font-bold mb-2">تم التوقيع بنجاح</h2>
-            <p className="text-sm text-muted-foreground">شكراً لك، تم توقيع المستند بنجاح.</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-background" dir="rtl">
+        <div className="border-b">
+          <div className="max-w-4xl mx-auto p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-6 w-6 text-green-500" />
+              <div>
+                <h1 className="font-bold text-lg">{doc.title}</h1>
+                <p className="text-sm text-green-600">تم التوقيع بنجاح</p>
+              </div>
+            </div>
+            {doc.signedAt && (
+              <p className="text-xs text-muted-foreground">
+                {new Date(doc.signedAt).toLocaleDateString("ar-SA")}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="max-w-4xl mx-auto p-6">
+          <Card>
+            <CardContent className="p-6">
+              {/* Show document content */}
+              {doc.docType === "text" && doc.content ? (
+                <div className="prose max-w-none" dir="rtl" dangerouslySetInnerHTML={{ __html: doc.content as string }} />
+              ) : doc.fileUrl ? (
+                <PdfRenderer fileUrl={doc.fileUrl} />
+              ) : (
+                <p className="text-center text-muted-foreground py-8">محتوى المستند</p>
+              )}
+
+              {/* Show signatures */}
+              {doc.signatures && doc.signatures.length > 0 && (
+                <div className="mt-6 pt-6 border-t space-y-4">
+                  <h3 className="font-semibold text-sm">التوقيعات:</h3>
+                  {doc.signatures.map((sig: any, i: number) => (
+                    <div key={i} className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg">
+                      {sig.signatureData && (
+                        <img src={sig.signatureData} alt="التوقيع" className="h-16 border rounded bg-white p-1" />
+                      )}
+                      <div>
+                        <p className="font-medium text-sm">{sig.signerName}</p>
+                        {sig.signerEmail && <p className="text-xs text-muted-foreground">{sig.signerEmail}</p>}
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(sig.signedAt).toLocaleDateString("ar-SA")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

@@ -210,6 +210,7 @@ export const documents = pgTable("documents", {
   shareToken: varchar("share_token").unique(),
   recipientName: text("recipient_name"),
   recipientEmail: text("recipient_email"),
+  notes: text("notes"),
   signedAt: timestamp("signed_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

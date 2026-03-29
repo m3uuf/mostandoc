@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePlanLimits } from "@/hooks/use-plan-limits";
 import UpgradePrompt from "@/components/upgrade-prompt";
-import { Plus, Loader2, Receipt, Pencil, Trash2, X, Download } from "lucide-react";
+import { Plus, Loader2, Receipt, Pencil, Trash2, X, Download, Send } from "lucide-react";
 import { PaginationControls } from "@/components/pagination";
 import { generatePdfFromElement } from "@/lib/pdf-generator";
 import type { Invoice, Client, Profile } from "@shared/schema";
@@ -80,6 +80,27 @@ export default function InvoicesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setDeleteConfirm(null);
       toast({ title: "تم حذف الفاتورة" });
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (inv: any) => {
+      const res = await apiRequest("POST", `/api/invoices/${inv.id}/send`, {
+        email: inv.clientEmail,
+        clientName: inv.clientName,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "تم إرسال الفاتورة للعميل بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
 
@@ -220,6 +241,7 @@ export default function InvoicesPage() {
                     <td className="p-3 hidden md:table-cell text-muted-foreground">{inv.dueDate || "-"}</td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        <Button size="icon" variant="ghost" title="إرسال للعميل" onClick={() => sendMutation.mutate(inv)} disabled={sendMutation.isPending}><Send className="h-4 w-4 text-primary" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => downloadInvoicePdf(inv)} disabled={pdfGenerating} data-testid={`button-pdf-invoice-${inv.id}`}><Download className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => openEdit(inv)}><Pencil className="h-4 w-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => setDeleteConfirm(inv.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>

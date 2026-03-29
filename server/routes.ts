@@ -793,6 +793,58 @@ export async function registerRoutes(
     }
   });
 
+  // Send invoice to client via email
+  app.post("/api/invoices/:id/send", isAuthenticated, async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id, getUserId(req));
+      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+
+      // Get client email
+      let clientEmail = req.body.email;
+      let clientName = req.body.clientName || "";
+      if (invoice.clientId) {
+        const client = await storage.getClient(invoice.clientId, getUserId(req));
+        if (client) {
+          clientEmail = clientEmail || client.email;
+          clientName = clientName || client.name;
+        }
+      }
+      if (!clientEmail) {
+        return res.status(400).json({ message: "لا يوجد بريد إلكتروني للعميل" });
+      }
+
+      // Get sender info
+      const user = await storage.getUser(getUserId(req));
+      const senderName = user?.fullName || user?.username || "مستندك";
+
+      // Get invoice items for total
+      const items = await storage.getInvoiceItems(invoice.id);
+      const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0);
+      const vat = subtotal * 0.15;
+      const total = subtotal + vat;
+
+      const { sendInvoiceEmail } = await import("./email");
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      await sendInvoiceEmail(
+        clientEmail,
+        clientName,
+        senderName,
+        invoice.invoiceNumber || invoice.id,
+        `${total.toLocaleString("ar-SA")} ر.س`,
+        invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("ar-SA") : "غير محدد",
+        `${baseUrl}/dashboard/invoices`
+      );
+
+      // Update invoice status to sent
+      await storage.updateInvoice(req.params.id, getUserId(req), { status: "sent" });
+
+      res.json({ success: true, message: "تم إرسال الفاتورة بنجاح" });
+    } catch (error) {
+      console.error("Send invoice error:", error);
+      res.status(500).json({ message: "فشل في إرسال الفاتورة" });
+    }
+  });
+
   app.delete("/api/invoices/:id", isAuthenticated, async (req, res) => {
     try {
       await storage.deleteInvoice(req.params.id, getUserId(req));
@@ -1637,12 +1689,11 @@ export async function registerRoutes(
     try {
       const doc = await storage.getDocumentByShareToken(req.params.shareToken);
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
-      if (doc.status !== "sent" && doc.status !== "draft") {
-        return res.status(400).json({ message: "المستند غير متاح للتوقيع" });
-      }
       const fields = await storage.getDocumentFields(doc.id);
       const signatures = await storage.getDocumentSignatures(doc.id);
-      res.json({ ...doc, fields, signatures });
+      // Allow viewing signed documents (read-only) but include signed flag
+      const isSigned = doc.status === "signed";
+      res.json({ ...doc, fields, signatures, isSigned });
     } catch (error) {
       console.error("Get shared document error:", error);
       res.status(500).json({ message: "فشل في تحميل المستند" });
