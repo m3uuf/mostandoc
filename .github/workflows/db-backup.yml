@@ -1,0 +1,45 @@
+# نسخ احتياطي يومي لقاعدة بيانات الإنتاج على Railway
+# يتطلب secret باسم DATABASE_PUBLIC_URL في إعدادات المستودع على GitHub
+# (القيمة من Railway → Postgres → Variables → DATABASE_PUBLIC_URL)
+name: Database Backup
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # يوميًا الساعة 03:00 بتوقيت السعودية
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Dump database
+        env:
+          DATABASE_PUBLIC_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: |
+          if [ -z "$DATABASE_PUBLIC_URL" ]; then
+            echo "::error::DATABASE_PUBLIC_URL secret is not set"
+            exit 1
+          fi
+          STAMP=$(date -u +%Y-%m-%d_%H%M)
+          pg_dump "$DATABASE_PUBLIC_URL" -Fc --no-owner --no-acl -f "mostandoc-$STAMP.dump"
+          ls -lh mostandoc-*.dump
+          pg_restore --list "mostandoc-$STAMP.dump" | grep -c "TABLE DATA"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mostandoc-db-backup-${{ github.run_id }}
+          path: mostandoc-*.dump
+          retention-days: 90
+          if-no-files-found: error
