@@ -21,9 +21,12 @@ export type AuditAction =
   | "settings.update"
   | "coupon.create"
   | "coupon.update"
-  | "coupon.delete";
+  | "coupon.delete"
+  | "email.broadcast"
+  | "email.send";
 
 export type AuditTargetType =
+  | "email"
   | "user"
   | "document"
   | "template"

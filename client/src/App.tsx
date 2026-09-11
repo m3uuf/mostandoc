@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -36,6 +36,10 @@ import WhatsAppButton from "@/components/whatsapp-button";
 import { Loader2 } from "lucide-react";
 
 function AuthenticatedLayout() {
+  const [location] = useLocation();
+  // Editors manage their own full-height layout and mobile FABs, so the floating
+  // WhatsApp button and the bottom safe-area padding are skipped there.
+  const isEditorRoute = /^\/dashboard\/documents\/.+/.test(location);
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3.5rem",
@@ -52,8 +56,8 @@ function AuthenticatedLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
           </header>
           <ImpersonationBanner />
-          <WhatsAppButton />
-          <main className="flex-1 overflow-auto">
+          {!isEditorRoute && <WhatsAppButton />}
+          <main className={`flex-1 overflow-auto ${isEditorRoute ? "" : "pb-24"}`}>
             <Switch>
               <Route path="/dashboard" component={Dashboard} />
               <Route path="/dashboard/clients" component={ClientsPage} />

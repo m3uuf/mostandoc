@@ -44,8 +44,8 @@ const FIELD_TYPES = [
 
 type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
 
-function normalizeFileUrl(url: string): string {
-  if (!url) return url;
+function normalizeFileUrl(url: string | null | undefined): string {
+  if (!url) return "";
   // Fix protocol-relative URLs from Bubble CDN
   if (url.startsWith("//")) return "https:" + url;
   return url;
@@ -608,7 +608,6 @@ export default function DocumentEditor() {
                 canvasProps={{
                   className: "w-full",
                   style: { width: "100%", height: "200px" },
-                  "data-testid": "signature-canvas",
                 }}
               />
             </div>

@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node, mergeAttributes, type CommandProps } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 
 /**
@@ -119,7 +119,7 @@ export const SmartVariableExtension = Node.create({
     return {
       insertVariable:
         (variableName: string) =>
-        ({ commands }) => {
+        ({ commands }: CommandProps) => {
           return commands.insertContent({
             type: this.name,
             attrs: { variableName },

@@ -6,6 +6,7 @@ import type { Express, RequestHandler, Request } from "express";
 import { db } from "./db";
 import { users, passwordResetTokens, emailVerificationTokens } from "@shared/models/auth";
 import { eq, and, gt } from "drizzle-orm";
+import { cache } from "./cache";
 
 declare module "express-session" {
   interface SessionData {
@@ -41,11 +42,31 @@ export function setupCustomAuth(app: Express) {
   );
 }
 
-export const isAuthenticated: RequestHandler = (req, res, next) => {
-  if (req.session.userId) {
-    return next();
+const SUSPENSION_CACHE_TTL_MS = 60 * 1000;
+
+/** Returns true when the account is suspended or no longer exists. Cached briefly per user. */
+async function isAccountBlocked(userId: string): Promise<boolean> {
+  return cache.getOrSet(`user-blocked:${userId}`, SUSPENSION_CACHE_TTL_MS, async () => {
+    const user = await getUserById(userId);
+    return !user || Boolean(user.isSuspended);
+  });
+}
+
+export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  const userId = req.session.userId;
+  if (!userId) {
+    return res.status(401).json({ message: "غير مصرح" });
   }
-  return res.status(401).json({ message: "غير مصرح" });
+  try {
+    if (await isAccountBlocked(userId)) {
+      req.session.destroy(() => {});
+      return res.status(403).json({ message: "تم إيقاف هذا الحساب. تواصل مع الدعم لمزيد من المعلومات" });
+    }
+  } catch (error) {
+    console.error("Auth check error:", error);
+    return res.status(500).json({ message: "تعذر التحقق من الجلسة" });
+  }
+  return next();
 };
 
 export const isAdmin: RequestHandler = async (req, res, next) => {
@@ -53,7 +74,7 @@ export const isAdmin: RequestHandler = async (req, res, next) => {
     return res.status(401).json({ message: "غير مصرح" });
   }
   const user = await getUserById(req.session.userId);
-  if (!user || (user.role !== "admin" && user.role !== "superadmin")) {
+  if (!user || user.isSuspended || (user.role !== "admin" && user.role !== "superadmin")) {
     return res.status(403).json({ message: "صلاحيات غير كافية" });
   }
   return next();
@@ -64,7 +85,7 @@ export const isSuperAdmin: RequestHandler = async (req, res, next) => {
     return res.status(401).json({ message: "غير مصرح" });
   }
   const user = await getUserById(req.session.userId);
-  if (!user || user.role !== "superadmin") {
+  if (!user || user.isSuspended || user.role !== "superadmin") {
     return res.status(403).json({ message: "صلاحيات سوبر أدمن مطلوبة" });
   }
   return next();

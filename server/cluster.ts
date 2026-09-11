@@ -34,7 +34,8 @@ if (cluster.isPrimary) {
   });
 } else {
   // Workers run the actual server
-  import("./index.cjs").catch((err) => {
+  // @ts-expect-error — ./index.cjs only exists after `npm run build` (esbuild output next to cluster.cjs)
+  import("./index.cjs").catch((err: unknown) => {
     console.error(`[cluster] Worker ${process.pid} failed to start:`, err);
     process.exit(1);
   });

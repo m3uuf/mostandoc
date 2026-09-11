@@ -15,7 +15,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Placeholder } from "@tiptap/extension-placeholder";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -342,7 +342,7 @@ export default function TextDocumentEditor() {
       setTitle(t);
       const html = (doc as any).content || "<p></p>";
       lastSavedContentRef.current = html;
-      editor.commands.setContent(html, false);
+      editor.commands.setContent(html, { emitUpdate: false });
       setSaveStatus("saved");
     }
   }, [doc, editor]);
@@ -442,8 +442,13 @@ export default function TextDocumentEditor() {
       setShowSignDialog(false);
       setRecipientName("");
       setRecipientEmail("");
-    } catch {
-      toast({ title: "فشل إرسال المستند", variant: "destructive" });
+    } catch (error) {
+      const apiError = error instanceof ApiError ? error : null;
+      toast({
+        title: apiError?.upgrade ? "التوقيع الإلكتروني غير متاح في باقتك الحالية" : "فشل إرسال المستند",
+        description: apiError?.upgrade ? "قم بترقية باقتك من الإعدادات > الاشتراك لتفعيل الميزة" : apiError?.message,
+        variant: "destructive",
+      });
     } finally {
       setSendingForSign(false);
     }
@@ -780,7 +785,7 @@ export default function TextDocumentEditor() {
               <span>AI</span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56" dir="rtl">
+          <DropdownMenuContent align="start" className="w-56">
             {AI_ACTIONS.map(action => (
               <DropdownMenuItem key={action.id} onClick={() => runAI(action.id)} className="gap-2">
                 <action.icon className="h-4 w-4 text-purple-500" />
@@ -799,7 +804,7 @@ export default function TextDocumentEditor() {
                 <Megaphone className="h-4 w-4 text-purple-500" />
                 <span>تغيير النبرة</span>
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent dir="rtl">
+              <DropdownMenuSubContent>
                 {AI_TONES.map(tone => (
                   <DropdownMenuItem key={tone.id} onClick={() => runAI(tone.id)} className="gap-2">
                     <span>{tone.icon}</span>

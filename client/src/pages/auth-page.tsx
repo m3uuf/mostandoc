@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,20 @@ export default function AuthPage() {
   const [forgotSent, setForgotSent] = useState(false);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  // Social-login failures redirect back here with ?error=<reason>
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("error");
+    if (!reason) return;
+    const messages: Record<string, string> = {
+      suspended: "تم إيقاف هذا الحساب. تواصل مع الدعم لمزيد من المعلومات",
+      google: "تعذر تسجيل الدخول عبر Google، حاول مرة أخرى",
+      facebook: "تعذر تسجيل الدخول عبر Facebook، حاول مرة أخرى",
+      apple: "تعذر تسجيل الدخول عبر Apple، حاول مرة أخرى",
+    };
+    toast({ title: messages[reason] || "تعذر تسجيل الدخول", variant: "destructive" });
+    window.history.replaceState({}, "", "/auth");
+  }, [toast]);
   const queryClient = useQueryClient();
 
   const { data: providers } = useQuery<{ google: boolean; facebook: boolean; apple: boolean }>({

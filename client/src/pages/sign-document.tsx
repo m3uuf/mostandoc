@@ -14,10 +14,10 @@ const logoIcon = "/favicon.png";
 import type { Document, DocumentField } from "@shared/schema";
 import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType, FIELD_CONFIG } from "@/components/editor/fillable-fields-extension";
 
-type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[] };
+type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[]; isSigned?: boolean };
 
-function normalizeFileUrl(url: string): string {
-  if (!url) return url;
+function normalizeFileUrl(url: string | null | undefined): string {
+  if (!url) return "";
   if (url.startsWith("//")) return "https:" + url;
   return url;
 }
@@ -340,7 +340,7 @@ export default function SignDocument() {
               /* ─── File Document (PDF/Image) ──────────────────── */
               <div className="relative bg-white dark:bg-gray-900 rounded-lg overflow-hidden" style={{ minHeight: 400 }}>
                 {doc.fileType === "image" ? (
-                  <img src={doc.fileUrl} alt={doc.title} className="w-full h-auto" />
+                  <img src={normalizeFileUrl(doc.fileUrl)} alt={doc.title} className="w-full h-auto" />
                 ) : (
                   <PdfRenderer fileUrl={doc.fileUrl!} />
                 )}
@@ -428,7 +428,6 @@ export default function SignDocument() {
                   canvasProps={{
                     className: "w-full",
                     style: { width: "100%", height: "200px" },
-                    "data-testid": "public-signature-canvas",
                   }}
                 />
               </div>

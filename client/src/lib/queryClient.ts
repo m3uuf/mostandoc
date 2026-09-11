@@ -1,10 +1,34 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+export class ApiError extends Error {
+  status: number;
+  upgrade: boolean;
+  constructor(status: number, message: string, upgrade = false) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.upgrade = upgrade;
   }
+}
+
+const GENERIC_ERROR = "حدث خطأ غير متوقع، حاول مرة أخرى";
+
+/** Turns a failed response into an ApiError carrying the server's Arabic `message` (never raw JSON). */
+async function throwIfResNotOk(res: Response) {
+  if (res.ok) return;
+  let message = GENERIC_ERROR;
+  let upgrade = false;
+  const text = await res.text();
+  if (text) {
+    try {
+      const data = JSON.parse(text) as { message?: string; upgrade?: boolean };
+      if (data.message) message = data.message;
+      upgrade = Boolean(data.upgrade);
+    } catch {
+      message = res.status >= 500 ? GENERIC_ERROR : text;
+    }
+  }
+  throw new ApiError(res.status, message, upgrade);
 }
 
 export async function apiRequest(

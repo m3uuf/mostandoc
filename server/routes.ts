@@ -12,6 +12,7 @@ import { pool } from "./db";
 import { setupCustomAuth, isAuthenticated, isAdmin, isSuperAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { logAudit, getClientIp } from "./audit";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
+import { insertContractSchema, insertInvoiceSchema, insertInvoiceItemSchema, insertProjectSchema } from "@shared/schema";
 import multer from "multer";
 import fs from "fs";
 import os from "os";
@@ -33,6 +34,43 @@ const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
+
+// Express 5 types route params as `string | string[]`; our routes only ever use single values.
+function param(req: Request, name: string): string {
+  const value = req.params[name];
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+// Body schemas for user-created resources: server-owned columns (id, userId, timestamps) are never
+// taken from the client, and unknown keys are stripped.
+const createContractBodySchema = insertContractSchema.omit({ userId: true }).extend({
+  title: z.string().trim().min(1, "عنوان العقد مطلوب"),
+});
+const createInvoiceBodySchema = insertInvoiceSchema.omit({ userId: true }).extend({
+  invoiceNumber: z.string().trim().min(1, "رقم الفاتورة مطلوب"),
+});
+const invoiceItemsBodySchema = z.array(insertInvoiceItemSchema.omit({ invoiceId: true }));
+const createProjectBodySchema = insertProjectSchema.omit({ userId: true }).extend({
+  name: z.string().trim().min(1, "اسم المشروع مطلوب"),
+});
+
+function firstZodMessage(error: z.ZodError, fallback: string): string {
+  const issue = error.errors[0];
+  if (!issue) return fallback;
+  // drizzle-zod's default messages are English ("Required", "Expected string..."); keep ours Arabic.
+  return /[؀-ۿ]/.test(issue.message) ? issue.message : `${fallback} (${issue.path.join(".") || "body"})`;
+}
+
+const adminUpdateUserSchema = z.object({
+  role: z.enum(["user", "admin", "superadmin"]).optional(),
+  isSuspended: z.boolean().optional(),
+  subscription: z
+    .object({
+      plan: z.enum(["free", "starter", "pro"]).optional(),
+      status: z.enum(["active", "trialing", "past_due", "cancelled"]).optional(),
+    })
+    .optional(),
+});
 
 function getPagination(req: Request, defaultLimit = 20) {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -255,6 +293,9 @@ export async function registerRoutes(
       if (!valid) {
         return res.status(401).json({ message: "البريد الإلكتروني أو كلمة المرور غير صحيحة" });
       }
+      if (user.isSuspended) {
+        return res.status(403).json({ message: "تم إيقاف هذا الحساب. تواصل مع الدعم لمزيد من المعلومات" });
+      }
       req.session.userId = user.id;
       const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
@@ -446,7 +487,8 @@ export async function registerRoutes(
 
     app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));
     app.get("/api/auth/google/callback", passport.authenticate("google", { session: false, failureRedirect: "/auth?error=google" }), (req, res) => {
-      const user = req.user as { id: string };
+      const user = req.user as { id: string; isSuspended?: boolean | null };
+      if (user.isSuspended) return res.redirect("/auth?error=suspended");
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -476,7 +518,8 @@ export async function registerRoutes(
 
     app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email"], session: false }));
     app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { session: false, failureRedirect: "/auth?error=facebook" }), (req, res) => {
-      const user = req.user as { id: string };
+      const user = req.user as { id: string; isSuspended?: boolean | null };
+      if (user.isSuspended) return res.redirect("/auth?error=suspended");
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -511,7 +554,8 @@ export async function registerRoutes(
 
     app.get("/api/auth/apple", passport.authenticate("apple", { session: false }));
     app.post("/api/auth/apple/callback", passport.authenticate("apple", { session: false, failureRedirect: "/auth?error=apple" }), (req, res) => {
-      const user = req.user as { id: string };
+      const user = req.user as { id: string; isSuspended?: boolean | null };
+      if (user.isSuspended) return res.redirect("/auth?error=suspended");
       req.session.userId = user.id;
       res.redirect("/dashboard");
     });
@@ -610,7 +654,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:id", isAuthenticated, async (req, res) => {
     try {
-      const client = await storage.getClient(req.params.id, getUserId(req));
+      const client = await storage.getClient(param(req, "id"), getUserId(req));
       if (!client) return res.status(404).json({ message: "العميل غير موجود" });
       res.json(client);
     } catch (error) {
@@ -636,7 +680,7 @@ export async function registerRoutes(
 
   app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
     try {
-      const client = await storage.updateClient(req.params.id, getUserId(req), req.body);
+      const client = await storage.updateClient(param(req, "id"), getUserId(req), req.body);
       if (!client) return res.status(404).json({ message: "العميل غير موجود" });
       res.json(client);
     } catch (error) {
@@ -672,7 +716,7 @@ export async function registerRoutes(
 
   app.get("/api/contracts/:id", isAuthenticated, async (req, res) => {
     try {
-      const contract = await storage.getContract(req.params.id, getUserId(req));
+      const contract = await storage.getContract(param(req, "id"), getUserId(req));
       if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
       res.json(contract);
     } catch (error) {
@@ -689,8 +733,9 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
-      const contract = await storage.createContract({ ...cleanedData, userId: getUserId(req) });
+      const parsed = createContractBodySchema.safeParse(cleanDates(req.body, ["startDate", "endDate"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العقد غير صالحة") });
+      const contract = await storage.createContract({ ...parsed.data, userId: getUserId(req) });
       res.json(contract);
     } catch (error) {
       console.error("Contract creation error:", error);
@@ -701,7 +746,7 @@ export async function registerRoutes(
   app.patch("/api/contracts/:id", isAuthenticated, async (req, res) => {
     try {
       const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
-      const contract = await storage.updateContract(req.params.id, getUserId(req), cleanedData);
+      const contract = await storage.updateContract(param(req, "id"), getUserId(req), cleanedData);
       if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
       res.json(contract);
     } catch (error) {
@@ -711,7 +756,7 @@ export async function registerRoutes(
 
   app.delete("/api/contracts/:id", isAuthenticated, async (req, res) => {
     try {
-      await storage.deleteContract(req.params.id, getUserId(req));
+      await storage.deleteContract(param(req, "id"), getUserId(req));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف العقد" });
@@ -740,9 +785,9 @@ export async function registerRoutes(
 
   app.get("/api/invoices/:id", isAuthenticated, async (req, res) => {
     try {
-      const invoice = await storage.getInvoice(req.params.id, getUserId(req));
+      const invoice = await storage.getInvoice(param(req, "id"), getUserId(req));
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      const items = await storage.getInvoiceItems(req.params.id);
+      const items = await storage.getInvoiceItems(param(req, "id"));
       res.json({ ...invoice, items });
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل الفاتورة" });
@@ -758,13 +803,14 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const { items, ...invoiceData } = req.body;
-      const cleanedData = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
-      const invoice = await storage.createInvoice({ ...cleanedData, userId: getUserId(req) });
-      if (items && items.length > 0) {
-        for (const item of items) {
-          await storage.createInvoiceItem({ ...item, invoiceId: invoice.id });
-        }
+      const { items: rawItems, ...invoiceData } = req.body ?? {};
+      const parsed = createInvoiceBodySchema.safeParse(cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الفاتورة غير صالحة") });
+      const parsedItems = invoiceItemsBodySchema.safeParse(rawItems ?? []);
+      if (!parsedItems.success) return res.status(400).json({ message: firstZodMessage(parsedItems.error, "بنود الفاتورة غير صالحة") });
+      const invoice = await storage.createInvoice({ ...parsed.data, userId: getUserId(req) });
+      for (const item of parsedItems.data) {
+        await storage.createInvoiceItem({ ...item, invoiceId: invoice.id });
       }
       const createdItems = await storage.getInvoiceItems(invoice.id);
       res.json({ ...invoice, items: createdItems });
@@ -778,15 +824,15 @@ export async function registerRoutes(
     try {
       const { items, ...invoiceData } = req.body;
       const cleanedInvoice = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
-      const invoice = await storage.updateInvoice(req.params.id, getUserId(req), cleanedInvoice);
+      const invoice = await storage.updateInvoice(param(req, "id"), getUserId(req), cleanedInvoice);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       if (items) {
-        await storage.deleteInvoiceItemsByInvoiceId(req.params.id);
+        await storage.deleteInvoiceItemsByInvoiceId(param(req, "id"));
         for (const item of items) {
           await storage.createInvoiceItem({ ...item, invoiceId: req.params.id });
         }
       }
-      const updatedItems = await storage.getInvoiceItems(req.params.id);
+      const updatedItems = await storage.getInvoiceItems(param(req, "id"));
       res.json({ ...invoice, items: updatedItems });
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث الفاتورة" });
@@ -796,7 +842,7 @@ export async function registerRoutes(
   // Send invoice to client via email
   app.post("/api/invoices/:id/send", isAuthenticated, async (req, res) => {
     try {
-      const invoice = await storage.getInvoice(req.params.id, getUserId(req));
+      const invoice = await storage.getInvoice(param(req, "id"), getUserId(req));
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
 
       // Get client email
@@ -813,30 +859,32 @@ export async function registerRoutes(
         return res.status(400).json({ message: "لا يوجد بريد إلكتروني للعميل" });
       }
 
-      // Get sender info
-      const user = await storage.getUser(getUserId(req));
-      const senderName = user?.fullName || user?.username || "مستندك";
+      // Get sender info (users table has first/last name; profiles has company/full name)
+      const [user, profile] = await Promise.all([
+        getUserById(getUserId(req)),
+        storage.getProfile(getUserId(req)),
+      ]);
+      const senderName =
+        profile?.companyName ||
+        profile?.fullName ||
+        [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+        "مستندك";
 
-      // Get invoice items for total
-      const items = await storage.getInvoiceItems(invoice.id);
-      const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0);
-      const vat = subtotal * 0.15;
-      const total = subtotal + vat;
+      // Use the stored total (already includes the invoice's own VAT rate)
+      const total = Number(invoice.total) || 0;
 
       const { sendInvoiceEmail } = await import("./email");
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
       await sendInvoiceEmail(
         clientEmail,
         clientName,
         senderName,
         invoice.invoiceNumber || invoice.id,
-        `${total.toLocaleString("ar-SA")} ر.س`,
-        invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("ar-SA") : "غير محدد",
-        `${baseUrl}/dashboard/invoices`
+        `${total.toLocaleString("ar-SA-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ر.س`,
+        invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("ar-SA-u-ca-gregory-nu-latn") : "غير محدد",
       );
 
       // Update invoice status to sent
-      await storage.updateInvoice(req.params.id, getUserId(req), { status: "sent" });
+      await storage.updateInvoice(param(req, "id"), getUserId(req), { status: "sent" });
 
       res.json({ success: true, message: "تم إرسال الفاتورة بنجاح" });
     } catch (error) {
@@ -847,7 +895,7 @@ export async function registerRoutes(
 
   app.delete("/api/invoices/:id", isAuthenticated, async (req, res) => {
     try {
-      await storage.deleteInvoice(req.params.id, getUserId(req));
+      await storage.deleteInvoice(param(req, "id"), getUserId(req));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف الفاتورة" });
@@ -867,9 +915,9 @@ export async function registerRoutes(
 
   app.get("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.getProject(req.params.id, getUserId(req));
+      const project = await storage.getProject(param(req, "id"), getUserId(req));
       if (!project) return res.status(404).json({ message: "المشروع غير موجود" });
-      const tasks = await storage.getProjectTasks(req.params.id);
+      const tasks = await storage.getProjectTasks(param(req, "id"));
       res.json({ ...project, tasks });
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل المشروع" });
@@ -885,8 +933,9 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const cleanedData = cleanDates(req.body, ["startDate", "deadline"]);
-      const project = await storage.createProject({ ...cleanedData, userId: getUserId(req) });
+      const parsed = createProjectBodySchema.safeParse(cleanDates(req.body, ["startDate", "deadline"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المشروع غير صالحة") });
+      const project = await storage.createProject({ ...parsed.data, userId: getUserId(req) });
       res.json(project);
     } catch (error) {
       res.status(500).json({ message: "فشل في إنشاء المشروع" });
@@ -895,7 +944,7 @@ export async function registerRoutes(
 
   app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.updateProject(req.params.id, getUserId(req), req.body);
+      const project = await storage.updateProject(param(req, "id"), getUserId(req), req.body);
       if (!project) return res.status(404).json({ message: "المشروع غير موجود" });
       res.json(project);
     } catch (error) {
@@ -905,7 +954,7 @@ export async function registerRoutes(
 
   app.delete("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
-      await storage.deleteProject(req.params.id, getUserId(req));
+      await storage.deleteProject(param(req, "id"), getUserId(req));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف المشروع" });
@@ -914,7 +963,7 @@ export async function registerRoutes(
 
   app.get("/api/projects/:id/tasks", isAuthenticated, async (req, res) => {
     try {
-      const tasks = await storage.getProjectTasks(req.params.id);
+      const tasks = await storage.getProjectTasks(param(req, "id"));
       res.json(tasks);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحميل المهام" });
@@ -923,7 +972,7 @@ export async function registerRoutes(
 
   app.post("/api/projects/:id/tasks", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.getProject(req.params.id, getUserId(req));
+      const project = await storage.getProject(param(req, "id"), getUserId(req));
       if (!project) return res.status(403).json({ message: "غير مصرح" });
       const task = await storage.createProjectTask({ ...req.body, projectId: req.params.id });
       res.json(task);
@@ -934,11 +983,11 @@ export async function registerRoutes(
 
   app.patch("/api/tasks/:id", isAuthenticated, async (req, res) => {
     try {
-      const existingTask = await storage.getProjectTaskById(req.params.id);
+      const existingTask = await storage.getProjectTaskById(param(req, "id"));
       if (!existingTask) return res.status(404).json({ message: "المهمة غير موجودة" });
       const project = await storage.getProject(existingTask.projectId, getUserId(req));
       if (!project) return res.status(403).json({ message: "غير مصرح" });
-      const task = await storage.updateProjectTask(req.params.id, req.body);
+      const task = await storage.updateProjectTask(param(req, "id"), req.body);
       if (!task) return res.status(404).json({ message: "المهمة غير موجودة" });
       res.json(task);
     } catch (error) {
@@ -948,11 +997,11 @@ export async function registerRoutes(
 
   app.delete("/api/tasks/:id", isAuthenticated, async (req, res) => {
     try {
-      const existingTask = await storage.getProjectTaskById(req.params.id);
+      const existingTask = await storage.getProjectTaskById(param(req, "id"));
       if (!existingTask) return res.status(404).json({ message: "المهمة غير موجودة" });
       const project = await storage.getProject(existingTask.projectId, getUserId(req));
       if (!project) return res.status(403).json({ message: "غير مصرح" });
-      await storage.deleteProjectTask(req.params.id);
+      await storage.deleteProjectTask(param(req, "id"));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف المهمة" });
@@ -988,9 +1037,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
-      const existing = await storage.getServiceById(req.params.id);
+      const existing = await storage.getServiceById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      const service = await storage.updateService(req.params.id, req.body);
+      const service = await storage.updateService(param(req, "id"), req.body);
       res.json(service);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث الخدمة" });
@@ -1001,9 +1050,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
-      const existing = await storage.getServiceById(req.params.id);
+      const existing = await storage.getServiceById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      await storage.deleteService(req.params.id);
+      await storage.deleteService(param(req, "id"));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف الخدمة" });
@@ -1036,9 +1085,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
-      const existing = await storage.getPortfolioItemById(req.params.id);
+      const existing = await storage.getPortfolioItemById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      const item = await storage.updatePortfolioItem(req.params.id, req.body);
+      const item = await storage.updatePortfolioItem(param(req, "id"), req.body);
       res.json(item);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث العمل" });
@@ -1049,9 +1098,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
-      const existing = await storage.getPortfolioItemById(req.params.id);
+      const existing = await storage.getPortfolioItemById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      await storage.deletePortfolioItem(req.params.id);
+      await storage.deletePortfolioItem(param(req, "id"));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في حذف العمل" });
@@ -1074,9 +1123,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
-      const msg = await storage.getContactMessageById(req.params.id);
+      const msg = await storage.getContactMessageById(param(req, "id"));
       if (!msg || msg.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      await storage.markMessageAsRead(req.params.id);
+      await storage.markMessageAsRead(param(req, "id"));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في تعليم الرسالة كمقروءة" });
@@ -1104,9 +1153,9 @@ export async function registerRoutes(
 
   app.patch("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
     try {
-      const notification = await storage.getNotificationById(req.params.id);
+      const notification = await storage.getNotificationById(param(req, "id"));
       if (!notification || notification.userId !== getUserId(req)) return res.status(403).json({ message: "غير مصرح" });
-      await storage.markNotificationAsRead(req.params.id);
+      await storage.markNotificationAsRead(param(req, "id"));
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "فشل في تعليم الإشعار كمقروء" });
@@ -1136,7 +1185,7 @@ export async function registerRoutes(
 
   app.post("/api/public/:username/contact", contactLimiter, async (req, res) => {
     try {
-      const profile = await storage.getProfileByUsername(req.params.username);
+      const profile = await storage.getProfileByUsername(param(req, "username"));
       if (!profile) return res.status(404).json({ message: "الصفحة غير موجودة" });
       const message = await storage.createContactMessage({ ...req.body, profileId: profile.id });
       await storage.createNotification({
@@ -1314,13 +1363,21 @@ export async function registerRoutes(
           const priceId = subscription.items.data[0]?.price?.id || null;
           const clientLimitMeta = subscription.metadata?.clientLimit ? parseInt(subscription.metadata.clientLimit) : null;
 
+          // Stripe API 2025-03-31+ moved current_period_* to the subscription item;
+          // older webhook API versions still send them on the subscription itself.
+          const firstItem = subscription.items.data[0] as { current_period_start?: number; current_period_end?: number } | undefined;
+          const legacy = subscription as unknown as { current_period_start?: number; current_period_end?: number };
+          const periodStart = firstItem?.current_period_start ?? legacy.current_period_start;
+          const periodEnd = firstItem?.current_period_end ?? legacy.current_period_end;
+          const toDate = (seconds?: number) => (Number.isFinite(seconds) ? new Date((seconds as number) * 1000) : undefined);
+
           await storage.updateSubscriptionByCustomerId(customerId, {
             stripeSubscriptionId: subscription.id,
             stripePriceId: priceId,
             plan,
             status: subscription.status === "active" || subscription.status === "trialing" ? "active" : subscription.status,
-            currentPeriodStart: new Date(subscription.current_period_start * 1000),
-            currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+            ...(toDate(periodStart) ? { currentPeriodStart: toDate(periodStart) } : {}),
+            ...(toDate(periodEnd) ? { currentPeriodEnd: toDate(periodEnd) } : {}),
             cancelAtPeriodEnd: subscription.cancel_at_period_end,
             ...(clientLimitMeta ? { clientLimit: clientLimitMeta } : {}),
           });
@@ -1372,8 +1429,7 @@ export async function registerRoutes(
         }
         pdfBuffer = fs.readFileSync(localPath);
       } else if (fileUrl.startsWith("http")) {
-        const { default: nodeFetch } = await import("node-fetch");
-        const pdfRes = await nodeFetch(fileUrl);
+        const pdfRes = await fetch(fileUrl);
         if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
         pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
       } else {
@@ -1426,7 +1482,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:clientId/documents", isAuthenticated, async (req, res) => {
     try {
-      const docs = await storage.getDocumentsByClient(req.params.clientId, getUserId(req));
+      const docs = await storage.getDocumentsByClient(param(req, "clientId"), getUserId(req));
       res.json(docs);
     } catch (error) {
       console.error("Get client documents error:", error);
@@ -1436,7 +1492,7 @@ export async function registerRoutes(
 
   app.get("/api/documents/:id", isAuthenticated, async (req, res) => {
     try {
-      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      const doc = await storage.getDocument(param(req, "id"), getUserId(req));
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const fields = await storage.getDocumentFields(doc.id);
       const signatures = await storage.getDocumentSignatures(doc.id);
@@ -1465,7 +1521,7 @@ export async function registerRoutes(
         return res.send(buffer);
       }
       // Fallback: check if document has an external URL (Bubble CDN)
-      const doc = await storage.getDocument(req.params.id);
+      const doc = await storage.getDocumentById(param(req, "id"));
       if (doc?.fileUrl && (doc.fileUrl.startsWith("http") || doc.fileUrl.startsWith("//"))) {
         const externalUrl = doc.fileUrl.startsWith("//") ? "https:" + doc.fileUrl : doc.fileUrl;
         return res.redirect(externalUrl);
@@ -1515,13 +1571,13 @@ export async function registerRoutes(
           return res.status(403).json({ message: "هذه الميزة غير متوفرة في باقتك الحالية", upgrade: true });
         }
       }
-      const doc = await storage.updateDocument(req.params.id, getUserId(req), req.body);
+      const doc = await storage.updateDocument(param(req, "id"), getUserId(req), req.body);
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
 
       if (req.body.status === "sent" && doc.recipientEmail && doc.shareToken) {
         try {
           const profile = await storage.getProfile(getUserId(req));
-          const senderName = profile?.businessName || profile?.name || "مستخدم مستندك";
+          const senderName = profile?.companyName || profile?.fullName || "مستخدم مستندك";
           const signUrl = `${req.protocol}://${req.get("host")}/sign/${doc.shareToken}`;
 
           await sendSigningRequestEmail(
@@ -1546,7 +1602,7 @@ export async function registerRoutes(
 
   app.delete("/api/documents/:id", isAuthenticated, async (req, res) => {
     try {
-      const result = await storage.deleteDocument(req.params.id, getUserId(req));
+      const result = await storage.deleteDocument(param(req, "id"), getUserId(req));
       if (!result) return res.status(404).json({ message: "المستند غير موجود" });
       res.json({ success: true });
     } catch (error) {
@@ -1570,7 +1626,7 @@ export async function registerRoutes(
 
   app.post("/api/documents/:id/fields", isAuthenticated, async (req, res) => {
     try {
-      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      const doc = await storage.getDocument(param(req, "id"), getUserId(req));
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const parsed = fieldBodySchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "بيانات الحقل غير صالحة" });
@@ -1587,14 +1643,14 @@ export async function registerRoutes(
 
   app.patch("/api/documents/:docId/fields/:fieldId", isAuthenticated, async (req, res) => {
     try {
-      const doc = await storage.getDocument(req.params.docId, getUserId(req));
+      const doc = await storage.getDocument(param(req, "docId"), getUserId(req));
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const existingFields = await storage.getDocumentFields(doc.id);
       const fieldBelongs = existingFields.some((f) => f.id === req.params.fieldId);
       if (!fieldBelongs) return res.status(403).json({ message: "هذا الحقل لا ينتمي للمستند" });
       const updateParsed = fieldBodySchema.partial().safeParse(req.body);
       if (!updateParsed.success) return res.status(400).json({ message: "بيانات الحقل غير صالحة" });
-      const field = await storage.updateDocumentField(req.params.fieldId, updateParsed.data);
+      const field = await storage.updateDocumentField(param(req, "fieldId"), updateParsed.data);
       if (!field) return res.status(404).json({ message: "الحقل غير موجود" });
       res.json(field);
     } catch (error) {
@@ -1605,12 +1661,12 @@ export async function registerRoutes(
 
   app.delete("/api/documents/:docId/fields/:fieldId", isAuthenticated, async (req, res) => {
     try {
-      const doc = await storage.getDocument(req.params.docId, getUserId(req));
+      const doc = await storage.getDocument(param(req, "docId"), getUserId(req));
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const existingFields = await storage.getDocumentFields(doc.id);
       const fieldBelongs = existingFields.some((f) => f.id === req.params.fieldId);
       if (!fieldBelongs) return res.status(403).json({ message: "هذا الحقل لا ينتمي للمستند" });
-      await storage.deleteDocumentField(req.params.fieldId);
+      await storage.deleteDocumentField(param(req, "fieldId"));
       res.json({ success: true });
     } catch (error) {
       console.error("Delete field error:", error);
@@ -1620,7 +1676,7 @@ export async function registerRoutes(
 
   app.put("/api/documents/:id/fields", isAuthenticated, async (req, res) => {
     try {
-      const doc = await storage.getDocument(req.params.id, getUserId(req));
+      const doc = await storage.getDocument(param(req, "id"), getUserId(req));
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       await storage.deleteDocumentFieldsByDocumentId(doc.id);
       const fieldsArr = z.array(fieldBodySchema).safeParse(req.body.fields || []);
@@ -1665,7 +1721,7 @@ export async function registerRoutes(
   app.patch("/api/content-library/:id", isAuthenticated, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const block = await storage.updateContentBlock(req.params.id, userId, req.body);
+      const block = await storage.updateContentBlock(param(req, "id"), userId, req.body);
       if (!block) return res.status(404).json({ message: "العنصر غير موجود" });
       res.json(block);
     } catch (error) {
@@ -1676,7 +1732,7 @@ export async function registerRoutes(
   app.delete("/api/content-library/:id", isAuthenticated, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const deleted = await storage.deleteContentBlock(req.params.id, userId);
+      const deleted = await storage.deleteContentBlock(param(req, "id"), userId);
       if (!deleted) return res.status(404).json({ message: "العنصر غير موجود" });
       res.json({ success: true });
     } catch (error) {
@@ -1951,16 +2007,41 @@ export async function registerRoutes(
 
   app.patch("/api/admin/users/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
-      const { role, isSuspended, subscription } = req.body;
+      const id = param(req, "id");
+      const parsedBody = adminUpdateUserSchema.safeParse(req.body);
+      if (!parsedBody.success) {
+        return res.status(400).json({ message: firstZodMessage(parsedBody.error, "بيانات التحديث غير صالحة") });
+      }
+      const { role, isSuspended, subscription } = parsedBody.data;
+
+      const actorId = getUserId(req);
+      const [actor, target] = await Promise.all([getUserById(actorId), getUserById(id)]);
+      if (!target) return res.status(404).json({ message: "المستخدم غير موجود" });
+      const actorIsSuper = actor?.role === "superadmin";
+
+      // Guard rails: only a superadmin can change roles or touch another superadmin,
+      // and nobody can change their own role or suspend themselves.
+      if (target.role === "superadmin" && !actorIsSuper) {
+        return res.status(403).json({ message: "لا يمكن تعديل حساب سوبر أدمن" });
+      }
+      if (role !== undefined) {
+        if (!actorIsSuper) return res.status(403).json({ message: "تغيير الصلاحيات متاح للسوبر أدمن فقط" });
+        if (id === actorId) return res.status(400).json({ message: "لا يمكن تغيير صلاحياتك الخاصة" });
+      }
+      if (isSuspended !== undefined && id === actorId) {
+        return res.status(400).json({ message: "لا يمكن إيقاف حسابك الخاص" });
+      }
 
       // Update user fields
       if (role !== undefined || isSuspended !== undefined) {
-        const fields: Record<string, any> = { updatedAt: new Date() };
+        const fields: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
         if (role !== undefined) fields.role = role;
         if (isSuspended !== undefined) fields.isSuspended = isSuspended;
-        const [updated] = await db.update(users).set(fields).where(eq(users.id, id)).returning();
-        if (!updated) return res.status(404).json({ message: "المستخدم غير موجود" });
+        await db.update(users).set(fields).where(eq(users.id, id));
+        cache.invalidate(`user-blocked:${id}`);
+        if (role !== undefined && role !== target.role) {
+          await logAudit(actorId, "user.role_change", "user", id, { from: target.role, to: role }, getClientIp(req));
+        }
       }
 
       // Log audit
@@ -1995,7 +2076,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/users/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = param(req, "id");
       const adminId = getUserId(req);
       if (id === adminId) return res.status(400).json({ message: "لا يمكن حذف حسابك الخاص" });
       const target = await getUserById(id);
@@ -2011,7 +2092,7 @@ export async function registerRoutes(
   // ─── Admin: User Activity ──────────────────────────────────────────────
   app.get("/api/admin/users/:id/activity", isAdmin, async (req: Request, res: Response) => {
     try {
-      const activity = await storage.getUserActivity(req.params.id);
+      const activity = await storage.getUserActivity(param(req, "id"));
       res.json(activity);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2022,11 +2103,13 @@ export async function registerRoutes(
   app.post("/api/admin/impersonate/:id", isSuperAdmin, async (req: Request, res: Response) => {
     try {
       const adminId = getUserId(req);
-      const targetId = req.params.id;
+      const targetId = param(req, "id");
       const target = await getUserById(targetId);
       if (!target) return res.status(404).json({ message: "المستخدم غير موجود" });
       if (target.role === "superadmin") return res.status(403).json({ message: "لا يمكن انتحال هوية سوبر أدمن" });
 
+      // Fresh session id on privilege change (prevents session fixation)
+      await new Promise<void>((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
       req.session.originalAdminId = adminId;
       req.session.userId = targetId;
       await logAudit(adminId, "user.impersonate", "user", targetId, { targetEmail: target.email }, getClientIp(req));
@@ -2105,9 +2188,9 @@ export async function registerRoutes(
 
   app.delete("/api/admin/documents/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteDocumentAdmin(req.params.id);
+      const deleted = await storage.deleteDocumentAdmin(param(req, "id"));
       if (!deleted) return res.status(404).json({ message: "المستند غير موجود" });
-      await logAudit(getUserId(req), "document.delete", "document", req.params.id, {}, getClientIp(req));
+      await logAudit(getUserId(req), "document.delete", "document", param(req, "id"), {}, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2137,9 +2220,9 @@ export async function registerRoutes(
 
   app.patch("/api/admin/templates/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const template = await storage.updatePlatformTemplate(req.params.id, req.body);
+      const template = await storage.updatePlatformTemplate(param(req, "id"), req.body);
       if (!template) return res.status(404).json({ message: "القالب غير موجود" });
-      await logAudit(getUserId(req), "template.update", "template", req.params.id, req.body, getClientIp(req));
+      await logAudit(getUserId(req), "template.update", "template", param(req, "id"), req.body, getClientIp(req));
       res.json(template);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2148,9 +2231,9 @@ export async function registerRoutes(
 
   app.delete("/api/admin/templates/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deletePlatformTemplate(req.params.id);
+      const deleted = await storage.deletePlatformTemplate(param(req, "id"));
       if (!deleted) return res.status(404).json({ message: "القالب غير موجود" });
-      await logAudit(getUserId(req), "template.delete", "template", req.params.id, {}, getClientIp(req));
+      await logAudit(getUserId(req), "template.delete", "template", param(req, "id"), {}, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2201,9 +2284,9 @@ export async function registerRoutes(
 
   app.patch("/api/admin/coupons/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const coupon = await storage.updateCoupon(req.params.id, req.body);
+      const coupon = await storage.updateCoupon(param(req, "id"), req.body);
       if (!coupon) return res.status(404).json({ message: "الكوبون غير موجود" });
-      await logAudit(getUserId(req), "coupon.update", "coupon", req.params.id, req.body, getClientIp(req));
+      await logAudit(getUserId(req), "coupon.update", "coupon", param(req, "id"), req.body, getClientIp(req));
       res.json(coupon);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2212,9 +2295,9 @@ export async function registerRoutes(
 
   app.delete("/api/admin/coupons/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const deleted = await storage.deleteCoupon(req.params.id);
+      const deleted = await storage.deleteCoupon(param(req, "id"));
       if (!deleted) return res.status(404).json({ message: "الكوبون غير موجود" });
-      await logAudit(getUserId(req), "coupon.delete", "coupon", req.params.id, {}, getClientIp(req));
+      await logAudit(getUserId(req), "coupon.delete", "coupon", param(req, "id"), {}, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2364,10 +2447,10 @@ export async function registerRoutes(
   app.patch("/api/admin/tracking-scripts/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const adminId = getUserId(req);
-      const script = await storage.updateTrackingScript(req.params.id, req.body);
+      const script = await storage.updateTrackingScript(param(req, "id"), req.body);
       if (!script) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
       cache.invalidate("tracking-scripts:*");
-      await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.update", platform: script.platform }, getClientIp(req));
+      await logAudit(adminId, "settings.update", "settings", param(req, "id"), { action: "tracking_script.update", platform: script.platform }, getClientIp(req));
       res.json(script);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2377,10 +2460,10 @@ export async function registerRoutes(
   app.delete("/api/admin/tracking-scripts/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const adminId = getUserId(req);
-      const deleted = await storage.deleteTrackingScript(req.params.id);
+      const deleted = await storage.deleteTrackingScript(param(req, "id"));
       if (!deleted) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
       cache.invalidate("tracking-scripts:*");
-      await logAudit(adminId, "settings.update", "settings", req.params.id, { action: "tracking_script.delete" }, getClientIp(req));
+      await logAudit(adminId, "settings.update", "settings", param(req, "id"), { action: "tracking_script.delete" }, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
