@@ -9,6 +9,8 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "start:cluster": "NODE_ENV=production node dist/cluster.cjs",
     "check": "tsc",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx server/migrate.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

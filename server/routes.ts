@@ -12,7 +12,12 @@ import { pool } from "./db";
 import { setupCustomAuth, isAuthenticated, isAdmin, isSuperAdmin, getUserId, getUserByEmail, getUserById, createUser, verifyPassword, createOrUpdateSocialUser, generatePasswordResetToken, validateResetToken, resetPassword, generateEmailVerificationToken, verifyEmailToken } from "./customAuth";
 import { logAudit, getClientIp } from "./audit";
 import { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/models/auth";
-import { insertContractSchema, insertInvoiceSchema, insertInvoiceItemSchema, insertProjectSchema } from "@shared/schema";
+import {
+  insertContractSchema, insertInvoiceSchema, insertInvoiceItemSchema, insertProjectSchema,
+  insertClientSchema, insertProjectTaskSchema, insertServiceSchema, insertPortfolioItemSchema,
+  insertProfileSchema, insertContentLibrarySchema, insertDocumentSchema,
+  insertPlatformTemplateSchema, insertDiscountCouponSchema, insertTrackingScriptSchema,
+} from "@shared/schema";
 import multer from "multer";
 import fs from "fs";
 import os from "os";
@@ -24,6 +29,17 @@ import { Strategy as FacebookStrategy } from "passport-facebook";
 import express from "express";
 import path from "path";
 import xss from "xss";
+import type { IWhiteList } from "xss";
+
+// `xss` is CommonJS; its helpers are attached to the default export (named ESM imports are not detected by Node).
+const { FilterXSS, getDefaultWhiteList, escapeAttrValue } = xss as unknown as {
+  FilterXSS: new (options: {
+    whiteList?: IWhiteList;
+    onIgnoreTagAttr?: (tag: string, name: string, value: string, isWhiteAttr: boolean) => string | void;
+  }) => { process(html: string): string };
+  getDefaultWhiteList: () => IWhiteList;
+  escapeAttrValue: (value: string) => string;
+};
 import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail, sendSigningRequestEmail, sendSignatureConfirmationEmail } from "./email";
 
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -44,15 +60,134 @@ function param(req: Request, name: string): string {
 // Body schemas for user-created resources: server-owned columns (id, userId, timestamps) are never
 // taken from the client, and unknown keys are stripped.
 const createContractBodySchema = insertContractSchema.omit({ userId: true }).extend({
-  title: z.string().trim().min(1, "عنوان العقد مطلوب"),
-});
+  title: z.string().trim().min(1, "عنوان العقد مطلوب").max(300),
+}).refine(
+  (d) => !d.startDate || !d.endDate || d.endDate >= d.startDate,
+  { message: "تاريخ النهاية يجب أن يكون بعد تاريخ البداية", path: ["endDate"] },
+);
 const createInvoiceBodySchema = insertInvoiceSchema.omit({ userId: true }).extend({
-  invoiceNumber: z.string().trim().min(1, "رقم الفاتورة مطلوب"),
+  invoiceNumber: z.string().trim().min(1, "رقم الفاتورة مطلوب").max(50),
 });
-const invoiceItemsBodySchema = z.array(insertInvoiceItemSchema.omit({ invoiceId: true }));
+const invoiceItemsBodySchema = z.array(insertInvoiceItemSchema.omit({ invoiceId: true }).extend({
+  description: z.string().trim().min(1, "وصف البند مطلوب").max(500),
+  quantity: z.string().refine((v) => Number.isFinite(Number(v)) && Number(v) > 0, "الكمية يجب أن تكون أكبر من صفر"),
+  unitPrice: z.string().refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, "السعر يجب ألا يكون سالبًا"),
+})).max(200);
 const createProjectBodySchema = insertProjectSchema.omit({ userId: true }).extend({
-  name: z.string().trim().min(1, "اسم المشروع مطلوب"),
+  name: z.string().trim().min(1, "اسم المشروع مطلوب").max(300),
+}).refine(
+  (d) => !d.startDate || !d.deadline || d.deadline >= d.startDate,
+  { message: "الموعد النهائي يجب أن يكون بعد تاريخ البدء", path: ["deadline"] },
+);
+
+// "" from HTML inputs means "not set"
+const emptyToNull = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === "" ? null : v), schema);
+const optionalEmail = emptyToNull(z.string().trim().email("البريد الإلكتروني غير صالح").max(254).nullable().optional());
+const optionalDate = emptyToNull(z.coerce.date().nullable().optional());
+const positiveDecimal = (msg: string) => z.string().refine((v) => Number.isFinite(Number(v)) && Number(v) > 0, msg);
+const nonNegativeDecimal = (msg: string) => z.string().refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, msg);
+const dateOrder = (start: string, end: string, message: string) => (d: Record<string, unknown>) =>
+  !d[start] || !d[end] || String(d[end]) >= String(d[start]);
+
+const clientBodySchema = insertClientSchema.omit({ userId: true }).extend({
+  name: z.string().trim().min(1, "اسم العميل مطلوب").max(200),
+  email: optionalEmail,
+  status: z.enum(["active", "prospect", "inactive"]).optional(),
 });
+const updateClientBodySchema = clientBodySchema.partial();
+
+const contractDateRule = { message: "تاريخ النهاية يجب أن يكون بعد تاريخ البداية", path: ["endDate"] };
+const updateContractBodySchema = insertContractSchema.omit({ userId: true }).partial()
+  .refine(dateOrder("startDate", "endDate", contractDateRule.message), contractDateRule);
+
+const updateInvoiceBodySchema = insertInvoiceSchema.omit({ userId: true }).partial();
+
+const projectDateRule = { message: "الموعد النهائي يجب أن يكون بعد تاريخ البدء", path: ["deadline"] };
+const updateProjectBodySchema = insertProjectSchema.omit({ userId: true }).partial()
+  .refine(dateOrder("startDate", "deadline", projectDateRule.message), projectDateRule);
+
+const taskBodySchema = insertProjectTaskSchema.omit({ projectId: true }).extend({
+  title: z.string().trim().min(1, "عنوان المهمة مطلوب").max(300),
+});
+const updateTaskBodySchema = taskBodySchema.partial();
+
+const serviceBodySchema = insertServiceSchema.omit({ profileId: true }).extend({
+  title: z.string().trim().min(1, "عنوان الخدمة مطلوب").max(200),
+});
+const portfolioBodySchema = insertPortfolioItemSchema.omit({ profileId: true }).extend({
+  title: z.string().trim().min(1, "عنوان العمل مطلوب").max(200),
+});
+
+const profileBodySchema = insertProfileSchema.omit({ userId: true, onboardingCompleted: true }).extend({
+  username: z.string().trim().toLowerCase()
+    .regex(/^[a-z0-9][a-z0-9_-]{2,29}$/, "اسم المستخدم يجب أن يكون 3-30 حرفًا إنجليزيًا أو أرقامًا أو - أو _"),
+  emailPublic: optionalEmail,
+});
+const updateProfileBodySchema = profileBodySchema.partial();
+
+const contactMessageBodySchema = z.object({
+  senderName: z.string().trim().min(1, "الاسم مطلوب").max(200),
+  senderEmail: z.string().trim().email("البريد الإلكتروني غير صالح").max(254),
+  message: z.string().trim().min(1, "الرسالة مطلوبة").max(5000),
+});
+
+const contentBlockBodySchema = insertContentLibrarySchema.omit({ userId: true }).extend({
+  name: z.string().trim().min(1, "الاسم مطلوب").max(200),
+  content: z.string().min(1, "المحتوى مطلوب").max(1_000_000),
+});
+const updateContentBlockBodySchema = contentBlockBodySchema.partial();
+
+const updateAccountBodySchema = z.object({
+  firstName: z.string().trim().min(1, "الاسم الأول مطلوب").max(100).optional(),
+  lastName: emptyToNull(z.string().trim().max(100).nullable().optional()),
+  phone: emptyToNull(z.string().trim().max(30).nullable().optional()),
+  email: z.string().trim().email("البريد الإلكتروني غير صالح").max(254).optional(),
+});
+
+// Only the owner-editable subset of a document; status transitions beyond draft/sent are server-driven.
+const updateDocumentBodySchema = insertDocumentSchema
+  .omit({ userId: true, shareToken: true, signedAt: true, signedContent: true, docType: true, fileUrl: true, fileType: true })
+  .partial()
+  .extend({
+    status: z.enum(["draft", "sent"]).optional(),
+    content: z.string().max(5_000_000).optional(),
+    recipientEmail: optionalEmail,
+  });
+
+const templateBodySchema = insertPlatformTemplateSchema.omit({ createdBy: true, usageCount: true }).extend({
+  name: z.string().trim().min(1, "اسم القالب مطلوب").max(200),
+  content: z.string().min(1, "محتوى القالب مطلوب"),
+});
+const couponBodySchema = insertDiscountCouponSchema.omit({ createdBy: true, usedCount: true }).extend({
+  code: z.string().trim().min(1, "كود الكوبون مطلوب").max(50),
+  discountType: z.enum(["percentage", "fixed"]).optional(),
+  discountValue: positiveDecimal("قيمة الخصم يجب أن تكون أكبر من صفر"),
+  validFrom: optionalDate,
+  validUntil: optionalDate,
+});
+const trackingScriptBodySchema = insertTrackingScriptSchema.omit({ createdBy: true }).extend({
+  name: z.string().trim().min(1, "اسم السكربت مطلوب").max(200),
+  platform: z.string().trim().min(1).max(50),
+  placement: z.enum(["all", "landing_only", "dashboard_only", "public_profile"]).optional(),
+  headCode: z.string().max(50_000).nullable().optional(),
+  bodyCode: z.string().max(50_000).nullable().optional(),
+});
+const platformSettingsBodySchema = z.record(z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/), z.unknown());
+
+// HTML produced by the TipTap editor (rich text, tables, images, fillable fields) — anything else is stripped.
+const documentHtmlFilter = new FilterXSS({
+  whiteList: {
+    ...getDefaultWhiteList(),
+    div: ["style", "class"], span: ["style", "class"], p: ["style", "class"],
+    h1: ["style"], h2: ["style"], h3: ["style"], h4: ["style"], h5: ["style"], h6: ["style"],
+    li: ["style"], ul: ["style"], ol: ["style", "start"], td: ["style", "colspan", "rowspan", "colwidth"], th: ["style", "colspan", "rowspan", "colwidth"],
+    table: ["style", "class"], tr: [], tbody: [], thead: [], mark: ["style"], code: [], pre: [], blockquote: [], hr: [],
+    img: ["src", "alt", "title", "width", "height", "style"], a: ["href", "title", "target", "rel"], u: [], s: [], strong: [], em: [], b: [], i: [], br: [],
+  },
+  onIgnoreTagAttr: (_tag: string, name: string, value: string) =>
+    name.startsWith("data-") ? `${name}="${escapeAttrValue(value)}"` : undefined,
+});
+export const sanitizeDocumentHtml = (html: string) => documentHtmlFilter.process(html);
 
 function firstZodMessage(error: z.ZodError, fallback: string): string {
   const issue = error.errors[0];
@@ -141,7 +276,6 @@ export async function registerRoutes(
   });
 
   // Serve uploaded signed documents
-  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
   // ─── Smart rate limiting (per-user for authenticated, per-IP for public) ───
   const smartKeyGenerator: Options["keyGenerator"] = (req) => {
@@ -330,19 +464,43 @@ export async function registerRoutes(
   app.patch("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserId(req);
-      const { firstName, lastName, email } = req.body;
-      const { db: dbInstance } = await import("./db");
-      const { users } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-      const [user] = await dbInstance.update(users).set({
-        firstName: firstName || null,
-        lastName: lastName || null,
-        email: email || null,
-        updatedAt: new Date(),
-      }).where(eq(users.id, userId)).returning();
+      const parsed = updateAccountBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الحساب غير صالحة") });
+      const { firstName, lastName, phone, email } = parsed.data;
+
+      const current = await getUserById(userId);
+      if (!current) return res.status(404).json({ message: "المستخدم غير موجود" });
+
+      // Only fields that were actually sent are updated; the email is never blanked.
+      const fields: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
+      if (firstName !== undefined) fields.firstName = firstName;
+      if (lastName !== undefined) fields.lastName = lastName;
+      if (phone !== undefined) fields.phone = phone;
+
+      const newEmail = email?.toLowerCase();
+      const emailChanged = Boolean(newEmail && newEmail !== (current.email || "").toLowerCase());
+      if (emailChanged) {
+        const taken = await getUserByEmail(newEmail as string);
+        if (taken && taken.id !== userId) return res.status(400).json({ message: "البريد الإلكتروني مستخدم بالفعل" });
+        fields.email = newEmail;
+        fields.emailVerified = false;
+      }
+
+      const [user] = await db.update(users).set(fields).where(eq(users.id, userId)).returning();
       if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
+
+      if (emailChanged && user.email) {
+        try {
+          const verifyToken = await generateEmailVerificationToken(userId);
+          const verifyUrl = `${req.protocol}://${req.get("host")}/auth/verify-email?token=${verifyToken}`;
+          await sendVerificationEmail(user.email, user.firstName || "", verifyUrl);
+        } catch (emailError) {
+          console.error("Verification email error:", emailError);
+        }
+      }
+
       const { passwordHash, ...safeUser } = user;
-      res.json(safeUser);
+      res.json({ ...safeUser, emailChanged });
     } catch (error) {
       console.error("Update user error:", error);
       res.status(500).json({ message: "فشل في تحديث بيانات الحساب" });
@@ -607,7 +765,9 @@ export async function registerRoutes(
 
   app.post("/api/profile", isAuthenticated, async (req, res) => {
     try {
-      const profile = await storage.upsertProfile({ ...req.body, userId: getUserId(req) });
+      const parsed = profileBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات البروفايل غير صالحة") });
+      const profile = await storage.upsertProfile({ ...parsed.data, userId: getUserId(req) });
       res.json(profile);
     } catch (error: any) {
       if (error.constraint === "profiles_username_unique") {
@@ -619,7 +779,9 @@ export async function registerRoutes(
 
   app.patch("/api/profile", isAuthenticated, async (req, res) => {
     try {
-      const profile = await storage.updateProfile(getUserId(req), req.body);
+      const parsed = updateProfileBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات البروفايل غير صالحة") });
+      const profile = await storage.updateProfile(getUserId(req), parsed.data);
       res.json(profile);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث البروفايل" });
@@ -671,7 +833,9 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const client = await storage.createClient({ ...req.body, userId: getUserId(req) });
+      const parsed = clientBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العميل غير صالحة") });
+      const client = await storage.createClient({ ...parsed.data, userId: getUserId(req) });
       res.json(client);
     } catch (error) {
       res.status(500).json({ message: "فشل في إضافة العميل" });
@@ -680,7 +844,9 @@ export async function registerRoutes(
 
   app.patch("/api/clients/:id", isAuthenticated, async (req, res) => {
     try {
-      const client = await storage.updateClient(param(req, "id"), getUserId(req), req.body);
+      const parsed = updateClientBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العميل غير صالحة") });
+      const client = await storage.updateClient(param(req, "id"), getUserId(req), parsed.data);
       if (!client) return res.status(404).json({ message: "العميل غير موجود" });
       res.json(client);
     } catch (error) {
@@ -745,8 +911,9 @@ export async function registerRoutes(
 
   app.patch("/api/contracts/:id", isAuthenticated, async (req, res) => {
     try {
-      const cleanedData = cleanDates(req.body, ["startDate", "endDate"]);
-      const contract = await storage.updateContract(param(req, "id"), getUserId(req), cleanedData);
+      const parsed = updateContractBodySchema.safeParse(cleanDates(req.body ?? {}, ["startDate", "endDate"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العقد غير صالحة") });
+      const contract = await storage.updateContract(param(req, "id"), getUserId(req), parsed.data);
       if (!contract) return res.status(404).json({ message: "العقد غير موجود" });
       res.json(contract);
     } catch (error) {
@@ -822,14 +989,17 @@ export async function registerRoutes(
 
   app.patch("/api/invoices/:id", isAuthenticated, async (req, res) => {
     try {
-      const { items, ...invoiceData } = req.body;
-      const cleanedInvoice = cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]);
-      const invoice = await storage.updateInvoice(param(req, "id"), getUserId(req), cleanedInvoice);
+      const { items: rawItems, ...invoiceData } = req.body ?? {};
+      const parsed = updateInvoiceBodySchema.safeParse(cleanDates(invoiceData, ["dueDate", "issueDate", "paidAt"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الفاتورة غير صالحة") });
+      const parsedItems = rawItems === undefined ? null : invoiceItemsBodySchema.safeParse(rawItems);
+      if (parsedItems && !parsedItems.success) return res.status(400).json({ message: firstZodMessage(parsedItems.error, "بنود الفاتورة غير صالحة") });
+      const invoice = await storage.updateInvoice(param(req, "id"), getUserId(req), parsed.data);
       if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
-      if (items) {
-        await storage.deleteInvoiceItemsByInvoiceId(param(req, "id"));
-        for (const item of items) {
-          await storage.createInvoiceItem({ ...item, invoiceId: req.params.id });
+      if (parsedItems?.success) {
+        await storage.deleteInvoiceItemsByInvoiceId(invoice.id);
+        for (const item of parsedItems.data) {
+          await storage.createInvoiceItem({ ...item, invoiceId: invoice.id });
         }
       }
       const updatedItems = await storage.getInvoiceItems(param(req, "id"));
@@ -944,7 +1114,9 @@ export async function registerRoutes(
 
   app.patch("/api/projects/:id", isAuthenticated, async (req, res) => {
     try {
-      const project = await storage.updateProject(param(req, "id"), getUserId(req), req.body);
+      const parsed = updateProjectBodySchema.safeParse(cleanDates(req.body ?? {}, ["startDate", "deadline"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المشروع غير صالحة") });
+      const project = await storage.updateProject(param(req, "id"), getUserId(req), parsed.data);
       if (!project) return res.status(404).json({ message: "المشروع غير موجود" });
       res.json(project);
     } catch (error) {
@@ -974,7 +1146,9 @@ export async function registerRoutes(
     try {
       const project = await storage.getProject(param(req, "id"), getUserId(req));
       if (!project) return res.status(403).json({ message: "غير مصرح" });
-      const task = await storage.createProjectTask({ ...req.body, projectId: req.params.id });
+      const parsed = taskBodySchema.safeParse(cleanDates(req.body ?? {}, ["dueDate"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المهمة غير صالحة") });
+      const task = await storage.createProjectTask({ ...parsed.data, projectId: project.id });
       res.json(task);
     } catch (error) {
       res.status(500).json({ message: "فشل في إضافة المهمة" });
@@ -987,7 +1161,9 @@ export async function registerRoutes(
       if (!existingTask) return res.status(404).json({ message: "المهمة غير موجودة" });
       const project = await storage.getProject(existingTask.projectId, getUserId(req));
       if (!project) return res.status(403).json({ message: "غير مصرح" });
-      const task = await storage.updateProjectTask(param(req, "id"), req.body);
+      const parsed = updateTaskBodySchema.safeParse(cleanDates(req.body ?? {}, ["dueDate"]));
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المهمة غير صالحة") });
+      const task = await storage.updateProjectTask(param(req, "id"), parsed.data);
       if (!task) return res.status(404).json({ message: "المهمة غير موجودة" });
       res.json(task);
     } catch (error) {
@@ -1025,7 +1201,9 @@ export async function registerRoutes(
       if (!profile) {
         profile = await storage.upsertProfile({ userId: getUserId(req), username: `user-${getUserId(req).slice(0, 8)}`, isPublic: true });
       }
-      const service = await storage.createService({ ...req.body, profileId: profile.id });
+      const parsed = serviceBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الخدمة غير صالحة") });
+      const service = await storage.createService({ ...parsed.data, profileId: profile.id });
       res.json(service);
     } catch (error) {
       console.error("Service creation error:", error);
@@ -1039,7 +1217,9 @@ export async function registerRoutes(
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
       const existing = await storage.getServiceById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      const service = await storage.updateService(param(req, "id"), req.body);
+      const parsed = serviceBodySchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الخدمة غير صالحة") });
+      const service = await storage.updateService(param(req, "id"), parsed.data);
       res.json(service);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث الخدمة" });
@@ -1074,7 +1254,9 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfile(getUserId(req));
       if (!profile) return res.status(400).json({ message: "يرجى إعداد البروفايل أولاً" });
-      const item = await storage.createPortfolioItem({ ...req.body, profileId: profile.id });
+      const parsed = portfolioBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العمل غير صالحة") });
+      const item = await storage.createPortfolioItem({ ...parsed.data, profileId: profile.id });
       res.json(item);
     } catch (error) {
       res.status(500).json({ message: "فشل في إضافة العمل" });
@@ -1087,7 +1269,9 @@ export async function registerRoutes(
       if (!profile) return res.status(403).json({ message: "غير مصرح" });
       const existing = await storage.getPortfolioItemById(param(req, "id"));
       if (!existing || existing.profileId !== profile.id) return res.status(403).json({ message: "غير مصرح" });
-      const item = await storage.updatePortfolioItem(param(req, "id"), req.body);
+      const parsed = portfolioBodySchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات العمل غير صالحة") });
+      const item = await storage.updatePortfolioItem(param(req, "id"), parsed.data);
       res.json(item);
     } catch (error) {
       res.status(500).json({ message: "فشل في تحديث العمل" });
@@ -1187,12 +1371,14 @@ export async function registerRoutes(
     try {
       const profile = await storage.getProfileByUsername(param(req, "username"));
       if (!profile) return res.status(404).json({ message: "الصفحة غير موجودة" });
-      const message = await storage.createContactMessage({ ...req.body, profileId: profile.id });
+      const parsed = contactMessageBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الرسالة غير صالحة") });
+      const message = await storage.createContactMessage({ ...parsed.data, profileId: profile.id });
       await storage.createNotification({
         userId: profile.userId,
         type: "new_message",
         title: "رسالة جديدة",
-        message: `رسالة جديدة من ${req.body.senderName} عبر صفحتك العامة`,
+        message: `رسالة جديدة من ${parsed.data.senderName} عبر صفحتك العامة`,
         link: "/dashboard/my-page",
       });
       res.json(message);
@@ -1414,60 +1600,6 @@ export async function registerRoutes(
     res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
   });
 
-  app.get("/api/pdf-preview", async (req, res) => {
-    try {
-      const fileUrl = req.query.url as string;
-      if (!fileUrl) return res.status(400).json({ message: "Missing url parameter" });
-
-      let pdfBuffer: Buffer;
-
-      // Try reading from local filesystem first
-      if (fileUrl.startsWith("/uploads/")) {
-        const localPath = path.join(process.cwd(), fileUrl);
-        if (!fs.existsSync(localPath)) {
-          return res.status(404).json({ message: "PDF not found" });
-        }
-        pdfBuffer = fs.readFileSync(localPath);
-      } else if (fileUrl.startsWith("http")) {
-        const pdfRes = await fetch(fileUrl);
-        if (!pdfRes.ok) return res.status(404).json({ message: "PDF not found" });
-        pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-      } else {
-        return res.status(400).json({ message: "Invalid URL" });
-      }
-
-      const { execSync } = await import("child_process");
-      const tmpDir = os.tmpdir();
-      const tmpPdf = path.join(tmpDir, `pdf-${Date.now()}.pdf`);
-      fs.writeFileSync(tmpPdf, pdfBuffer);
-
-      const outPrefix = path.join(tmpDir, `pdf-img-${Date.now()}`);
-      try {
-        execSync(`pdftoppm -png -f 1 -l 1 -r 150 "${tmpPdf}" "${outPrefix}"`, { timeout: 10000 });
-      } catch {
-        // pdftoppm not available — try using pdf.js or return error
-        fs.unlinkSync(tmpPdf);
-        return res.status(500).json({ message: "PDF conversion tool (pdftoppm) not available on server" });
-      }
-
-      // pdftoppm outputs -1.png or -01.png depending on version
-      const outFile = fs.existsSync(`${outPrefix}-1.png`) ? `${outPrefix}-1.png` : `${outPrefix}-01.png`;
-      if (!fs.existsSync(outFile)) {
-        fs.unlinkSync(tmpPdf);
-        return res.status(500).json({ message: "PDF conversion failed" });
-      }
-
-      const imgData = fs.readFileSync(outFile);
-      fs.unlinkSync(tmpPdf);
-      fs.unlinkSync(outFile);
-      res.setHeader("Content-Type", "image/png");
-      res.setHeader("Cache-Control", "public, max-age=3600");
-      res.send(imgData);
-    } catch (error) {
-      console.error("PDF preview error:", error);
-      res.status(500).json({ message: "Failed to generate PDF preview" });
-    }
-  });
 
   // Document routes
   app.get("/api/documents", isAuthenticated, async (req, res) => {
@@ -1507,8 +1639,12 @@ export async function registerRoutes(
   // Serve document file from document_files table
   app.get("/api/documents/:id/file", async (req, res) => {
     try {
+      // The document must still exist (deleted documents must not remain downloadable).
+      const doc = await storage.getDocumentById(param(req, "id"));
+      if (!doc) return res.status(404).json({ message: "الملف غير موجود" });
+
       const { documentFiles } = await import("@shared/schema");
-      const [fileRecord] = await db.select().from(documentFiles).where(eq(documentFiles.documentId, req.params.id));
+      const [fileRecord] = await db.select().from(documentFiles).where(eq(documentFiles.documentId, doc.id));
       if (fileRecord) {
         // Serve from document_files table (new uploads)
         const match = fileRecord.fileData.match(/^data:([^;]+);base64,(.+)$/s);
@@ -1517,12 +1653,12 @@ export async function registerRoutes(
         const buffer = Buffer.from(match[2], "base64");
         res.setHeader("Content-Type", mimeType);
         res.setHeader("Content-Length", buffer.length);
-        res.setHeader("Cache-Control", "public, max-age=31536000");
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        res.setHeader("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'");
         return res.send(buffer);
       }
       // Fallback: check if document has an external URL (Bubble CDN)
-      const doc = await storage.getDocumentById(param(req, "id"));
-      if (doc?.fileUrl && (doc.fileUrl.startsWith("http") || doc.fileUrl.startsWith("//"))) {
+      if (doc.fileUrl && (doc.fileUrl.startsWith("http") || doc.fileUrl.startsWith("//"))) {
         const externalUrl = doc.fileUrl.startsWith("//") ? "https:" + doc.fileUrl : doc.fileUrl;
         return res.redirect(externalUrl);
       }
@@ -1542,8 +1678,14 @@ export async function registerRoutes(
           limit: limitCheck.limit, current: limitCheck.current, upgrade: true
         });
       }
-      const { title, fileType, docType, content } = req.body;
-      if (!title) return res.status(400).json({ message: "العنوان مطلوب" });
+      const parsed = z.object({
+        title: z.string().trim().min(1, "العنوان مطلوب").max(300),
+        fileType: z.enum(["pdf", "image"]).nullable().optional(),
+        docType: z.enum(["file", "text"]).optional(),
+        content: z.string().max(5_000_000).nullable().optional(),
+      }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المستند غير صالحة") });
+      const { title, fileType, docType, content } = parsed.data;
       const crypto = await import("crypto");
       const shareToken = crypto.randomBytes(16).toString("hex");
       const doc = await storage.createDocument({
@@ -1552,7 +1694,7 @@ export async function registerRoutes(
         fileUrl: null,
         fileType: fileType || null,
         docType: docType || "file",
-        content: content || null,
+        content: content ? sanitizeDocumentHtml(content) : null,
         status: "draft",
         shareToken,
       });
@@ -1565,16 +1707,31 @@ export async function registerRoutes(
 
   app.patch("/api/documents/:id", isAuthenticated, async (req, res) => {
     try {
-      if (req.body.status === "sent") {
+      const parsed = updateDocumentBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المستند غير صالحة") });
+      const data = parsed.data;
+
+      const existing = await storage.getDocument(param(req, "id"), getUserId(req));
+      if (!existing) return res.status(404).json({ message: "المستند غير موجود" });
+      // A signed document is immutable: only metadata that doesn't alter the agreement may change.
+      if (existing.status === "signed" && (data.content !== undefined || data.status !== undefined)) {
+        return res.status(409).json({ message: "لا يمكن تعديل مستند تم توقيعه" });
+      }
+      if (data.status === "sent") {
         const sigAccess = await checkFeatureAccess(getUserId(req), "signatures");
         if (!sigAccess.allowed) {
           return res.status(403).json({ message: "هذه الميزة غير متوفرة في باقتك الحالية", upgrade: true });
         }
+        if (!(data.recipientEmail ?? existing.recipientEmail)) {
+          return res.status(400).json({ message: "بريد المستلم مطلوب لإرسال المستند للتوقيع" });
+        }
       }
-      const doc = await storage.updateDocument(param(req, "id"), getUserId(req), req.body);
+      if (data.content !== undefined) data.content = sanitizeDocumentHtml(data.content);
+
+      const doc = await storage.updateDocument(existing.id, getUserId(req), data);
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
 
-      if (req.body.status === "sent" && doc.recipientEmail && doc.shareToken) {
+      if (data.status === "sent" && doc.recipientEmail && doc.shareToken) {
         try {
           const profile = await storage.getProfile(getUserId(req));
           const senderName = profile?.companyName || profile?.fullName || "مستخدم مستندك";
@@ -1707,11 +1864,9 @@ export async function registerRoutes(
   app.post("/api/content-library", isAuthenticated, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const { name, description, content, category } = req.body;
-      if (!name || !content) {
-        return res.status(400).json({ message: "الاسم والمحتوى مطلوبان" });
-      }
-      const block = await storage.createContentBlock({ userId, name, description, content, category });
+      const parsed = contentBlockBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المحتوى غير صالحة") });
+      const block = await storage.createContentBlock({ ...parsed.data, content: sanitizeDocumentHtml(parsed.data.content), userId });
       res.json(block);
     } catch (error) {
       res.status(500).json({ message: "فشل في حفظ المحتوى" });
@@ -1721,7 +1876,10 @@ export async function registerRoutes(
   app.patch("/api/content-library/:id", isAuthenticated, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const block = await storage.updateContentBlock(param(req, "id"), userId, req.body);
+      const parsed = updateContentBlockBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات المحتوى غير صالحة") });
+      const data = parsed.data.content !== undefined ? { ...parsed.data, content: sanitizeDocumentHtml(parsed.data.content) } : parsed.data;
+      const block = await storage.updateContentBlock(param(req, "id"), userId, data);
       if (!block) return res.status(404).json({ message: "العنصر غير موجود" });
       res.json(block);
     } catch (error) {
@@ -1740,6 +1898,38 @@ export async function registerRoutes(
     }
   });
 
+  // Signed copy (rendered at signing time, immutable). Served with a strict CSP so no script can ever run.
+  const sendSignedCopy = (res: Response, doc: { id: string; signedContent: string | null; status: string | null }) => {
+    if (doc.status !== "signed" || !doc.signedContent) return res.status(404).json({ message: "لا توجد نسخة موقّعة لهذا المستند" });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Content-Disposition", `inline; filename="signed-${doc.id}.html"`);
+    return res.send(doc.signedContent);
+  };
+
+  app.get("/api/documents/:id/signed", isAuthenticated, async (req, res) => {
+    try {
+      const doc = await storage.getDocument(param(req, "id"), getUserId(req));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      return sendSignedCopy(res, doc);
+    } catch (error) {
+      console.error("Signed copy error:", error);
+      res.status(500).json({ message: "فشل في تحميل النسخة الموقّعة" });
+    }
+  });
+
+  app.get("/api/documents/sign/:shareToken/signed", async (req, res) => {
+    try {
+      const doc = await storage.getDocumentByShareToken(param(req, "shareToken"));
+      if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
+      return sendSignedCopy(res, doc);
+    } catch (error) {
+      console.error("Signed copy error:", error);
+      res.status(500).json({ message: "فشل في تحميل النسخة الموقّعة" });
+    }
+  });
+
   // Public document signing
   app.get("/api/documents/sign/:shareToken", async (req, res) => {
     try {
@@ -1747,22 +1937,39 @@ export async function registerRoutes(
       if (!doc) return res.status(404).json({ message: "المستند غير موجود" });
       const fields = await storage.getDocumentFields(doc.id);
       const signatures = await storage.getDocumentSignatures(doc.id);
-      // Allow viewing signed documents (read-only) but include signed flag
       const isSigned = doc.status === "signed";
-      res.json({ ...doc, fields, signatures, isSigned });
+      // Public projection: never expose the owner's ids, private notes, recipient email or the token itself.
+      res.json({
+        id: doc.id,
+        title: doc.title,
+        docType: doc.docType,
+        content: doc.content,
+        fileUrl: doc.fileUrl,
+        fileType: doc.fileType,
+        status: doc.status,
+        recipientName: doc.recipientName,
+        signedAt: doc.signedAt,
+        hasSignedCopy: Boolean(doc.signedContent),
+        fields,
+        signatures: signatures.map((s) => ({ signerName: s.signerName, signatureData: s.signatureData, signedAt: s.signedAt })),
+        isSigned,
+      });
     } catch (error) {
       console.error("Get shared document error:", error);
       res.status(500).json({ message: "فشل في تحميل المستند" });
     }
   });
 
+  // Signatures are drawn on a canvas and must arrive as raster data URIs — anything else is rejected
+  // (this string is embedded in the signed copy, so it must never carry markup).
+  const signatureImage = z.string().max(2_000_000).regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/, "صيغة التوقيع غير صالحة");
   const signBodySchema = z.object({
-    signerName: z.string().min(1).max(200),
+    signerName: z.string().trim().min(1).max(200),
     signerEmail: z.string().email().max(254).optional().or(z.literal("")),
-    signatureData: z.string().min(1).max(2000000),
-    fieldValues: z.record(z.string()).optional(),
-    fillableFieldValues: z.record(z.string()).optional(),
-    fillableSignatures: z.record(z.string()).optional(),
+    signatureData: signatureImage,
+    fieldValues: z.record(z.string().max(5000)).optional(),
+    fillableFieldValues: z.record(z.string().max(5000)).optional(),
+    fillableSignatures: z.record(signatureImage).optional(),
   });
 
   app.post("/api/documents/sign/:shareToken", async (req, res) => {
@@ -1807,23 +2014,17 @@ export async function registerRoutes(
         }
       }
 
-      // Generate signed PDF for text documents
-      let signedPdfUrl: string | null = null;
+      const signedAt = new Date();
+
+      // Render the immutable signed copy for text documents (stored in the DB, not on the ephemeral disk).
+      let signedContent: string | null = null;
       if (doc.docType === "text" && doc.content) {
         try {
-          const fs = await import("fs");
-          const path = await import("path");
-          const uploadsDir = path.join(process.cwd(), "uploads", "signed");
-          if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
-          }
+          const dateStr = signedAt.toLocaleDateString("ar-SA-u-ca-gregory-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 
-          const dateStr = new Date().toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" });
-
-          // Replace fillable field placeholders in content with filled values
-          let processedContent = doc.content as string;
+          // Fill the fillable-field placeholders with the signer's values (content was sanitized on save; do it again defensively).
+          let processedContent = sanitizeDocumentHtml(doc.content);
           if (fillableFieldValues || fillableSignatures) {
-            // Use regex to find and replace fillable field divs
             let fieldIndex = 0;
             processedContent = processedContent.replace(
               /(<div[^>]*data-type="fillableField"[^>]*data-field-type="([^"]*)"[^>]*data-label="([^"]*)"[^>]*>)([\s\S]*?)(<\/div>)/g,
@@ -1831,56 +2032,50 @@ export async function registerRoutes(
                 const idx = fieldIndex++;
                 const value = xss(fillableFieldValues?.[String(idx)] || "");
                 const sigData = fillableSignatures?.[String(idx)] || "";
+                const safeLabel = xss(label);
 
                 if (fieldType === "signature" && sigData) {
-                  return `<div style="margin:8px 0;padding:8px 0;"><div style="font-size:12px;color:#6b7280;font-weight:500;margin-bottom:4px;">${label}:</div><img src="${sigData}" style="max-width:250px;max-height:100px;" /></div>`;
+                  return `<div style="margin:8px 0;padding:8px 0;"><div style="font-size:12px;color:#6b7280;font-weight:500;margin-bottom:4px;">${safeLabel}:</div><img src="${sigData}" style="max-width:250px;max-height:100px;" /></div>`;
                 } else if (fieldType === "date") {
-                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${label}:</span> <span style="font-weight:500;margin-right:8px;">${value || new Date().toLocaleDateString("ar-SA")}</span></div>`;
+                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${safeLabel}:</span> <span style="font-weight:500;margin-right:8px;">${value || dateStr}</span></div>`;
                 } else {
-                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${label}:</span> <span style="font-weight:500;margin-right:8px;border-bottom:1px solid #374151;padding-bottom:2px;">${value}</span></div>`;
+                  return `<div style="margin:8px 0;padding:8px 0;"><span style="font-size:12px;color:#6b7280;">${safeLabel}:</span> <span style="font-weight:500;margin-right:8px;border-bottom:1px solid #374151;padding-bottom:2px;">${value}</span></div>`;
                 }
               }
             );
           }
 
-          const signedHtml = `
-<!DOCTYPE html>
+          signedContent = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
-<head><meta charset="UTF-8"><style>
+<head><meta charset="UTF-8"><title>${xss(doc.title)}</title><style>
   body { font-family: 'IBM Plex Sans Arabic', Tahoma, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px; color: #1a1a1a; line-height: 1.8; }
   h1 { text-align: center; font-size: 22px; margin-bottom: 24px; }
   table { width: 100%; border-collapse: collapse; margin: 16px 0; }
   th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: right; }
   th { background: #f3f4f6; font-weight: 600; }
+  img { max-width: 100%; }
   .signature-section { margin-top: 40px; padding-top: 20px; border-top: 2px solid #e5e7eb; }
   .signature-img { max-width: 300px; max-height: 120px; }
   .meta { color: #6b7280; font-size: 12px; margin-top: 8px; }
 </style></head>
 <body>
-  <h1>${doc.title}</h1>
+  <h1>${xss(doc.title)}</h1>
   ${processedContent}
   <div class="signature-section">
     <p><strong>التوقيع:</strong></p>
-    <img class="signature-img" src="${signatureData}" />
+    <img class="signature-img" src="${signatureData}" alt="التوقيع" />
     <p class="meta">الموقّع: ${xss(signerName)}${signerEmail ? ` (${xss(signerEmail)})` : ""}</p>
     <p class="meta">تاريخ التوقيع: ${dateStr}</p>
-    <p class="meta">عنوان IP: ${ip}</p>
+    <p class="meta">عنوان IP: ${xss(ip)}</p>
   </div>
 </body>
 </html>`;
-          const filename = `signed-${doc.id}.html`;
-          const filepath = path.join(uploadsDir, filename);
-          fs.writeFileSync(filepath, signedHtml, "utf-8");
-          signedPdfUrl = `/uploads/signed/${filename}`;
-        } catch (pdfErr) {
-          console.error("Generate signed document error:", pdfErr);
+        } catch (renderErr) {
+          console.error("Generate signed document error:", renderErr);
         }
       }
 
-      const signedAt = new Date();
-      const updateData: any = { status: "signed", signedAt };
-      if (signedPdfUrl) updateData.fileUrl = signedPdfUrl;
-      await storage.updateDocument(doc.id, doc.userId, updateData);
+      await storage.updateDocument(doc.id, doc.userId, { status: "signed", signedAt, signedContent });
 
       // Send signature confirmation emails
       try {
@@ -2210,7 +2405,9 @@ export async function registerRoutes(
 
   app.post("/api/admin/templates", isAdmin, async (req: Request, res: Response) => {
     try {
-      const template = await storage.createPlatformTemplate({ ...req.body, createdBy: getUserId(req) });
+      const parsed = templateBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات القالب غير صالحة") });
+      const template = await storage.createPlatformTemplate({ ...parsed.data, createdBy: getUserId(req) });
       await logAudit(getUserId(req), "template.create", "template", template.id, { name: template.name }, getClientIp(req));
       res.json(template);
     } catch (error: any) {
@@ -2220,9 +2417,11 @@ export async function registerRoutes(
 
   app.patch("/api/admin/templates/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const template = await storage.updatePlatformTemplate(param(req, "id"), req.body);
+      const parsed = templateBodySchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات القالب غير صالحة") });
+      const template = await storage.updatePlatformTemplate(param(req, "id"), parsed.data);
       if (!template) return res.status(404).json({ message: "القالب غير موجود" });
-      await logAudit(getUserId(req), "template.update", "template", param(req, "id"), req.body, getClientIp(req));
+      await logAudit(getUserId(req), "template.update", "template", param(req, "id"), { fields: Object.keys(parsed.data) }, getClientIp(req));
       res.json(template);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2274,7 +2473,9 @@ export async function registerRoutes(
 
   app.post("/api/admin/coupons", isAdmin, async (req: Request, res: Response) => {
     try {
-      const coupon = await storage.createCoupon({ ...req.body, createdBy: getUserId(req) });
+      const parsed = couponBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الكوبون غير صالحة") });
+      const coupon = await storage.createCoupon({ ...parsed.data, createdBy: getUserId(req) });
       await logAudit(getUserId(req), "coupon.create", "coupon", coupon.id, { code: coupon.code }, getClientIp(req));
       res.json(coupon);
     } catch (error: any) {
@@ -2284,9 +2485,11 @@ export async function registerRoutes(
 
   app.patch("/api/admin/coupons/:id", isAdmin, async (req: Request, res: Response) => {
     try {
-      const coupon = await storage.updateCoupon(param(req, "id"), req.body);
+      const parsed = couponBodySchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الكوبون غير صالحة") });
+      const coupon = await storage.updateCoupon(param(req, "id"), parsed.data);
       if (!coupon) return res.status(404).json({ message: "الكوبون غير موجود" });
-      await logAudit(getUserId(req), "coupon.update", "coupon", param(req, "id"), req.body, getClientIp(req));
+      await logAudit(getUserId(req), "coupon.update", "coupon", param(req, "id"), { fields: Object.keys(parsed.data) }, getClientIp(req));
       res.json(coupon);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2409,13 +2612,11 @@ export async function registerRoutes(
     try {
       const adminId = getUserId(req);
       // Store each top-level key as a separate setting
-      const data = req.body;
-      const settingsToSave: Record<string, any> = {};
-      for (const [key, value] of Object.entries(data)) {
-        settingsToSave[key] = value;
-      }
+      const parsed = platformSettingsBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات الإعدادات غير صالحة") });
+      const settingsToSave: Record<string, unknown> = { ...parsed.data };
       await storage.updatePlatformSettings(settingsToSave, adminId);
-      await logAudit(adminId, "settings.update", "settings", undefined, { keys: Object.keys(data) }, getClientIp(req));
+      await logAudit(adminId, "settings.update", "settings", undefined, { keys: Object.keys(settingsToSave) }, getClientIp(req));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2435,9 +2636,11 @@ export async function registerRoutes(
   app.post("/api/admin/tracking-scripts", isAdmin, async (req: Request, res: Response) => {
     try {
       const adminId = getUserId(req);
-      const script = await storage.createTrackingScript({ ...req.body, createdBy: adminId });
+      const parsed = trackingScriptBodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات السكربت غير صالحة") });
+      const script = await storage.createTrackingScript({ ...parsed.data, createdBy: adminId });
       cache.invalidate("tracking-scripts:*");
-      await logAudit(adminId, "settings.update", "settings", script.id, { action: "tracking_script.create", platform: req.body.platform }, getClientIp(req));
+      await logAudit(adminId, "settings.update", "settings", script.id, { action: "tracking_script.create", platform: script.platform }, getClientIp(req));
       res.json(script);
     } catch (error: any) {
       res.status(500).json({ message: error?.message });
@@ -2447,7 +2650,9 @@ export async function registerRoutes(
   app.patch("/api/admin/tracking-scripts/:id", isAdmin, async (req: Request, res: Response) => {
     try {
       const adminId = getUserId(req);
-      const script = await storage.updateTrackingScript(param(req, "id"), req.body);
+      const parsed = trackingScriptBodySchema.partial().safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: firstZodMessage(parsed.error, "بيانات السكربت غير صالحة") });
+      const script = await storage.updateTrackingScript(param(req, "id"), parsed.data);
       if (!script) return res.status(404).json({ message: "لم يتم العثور على السكربت" });
       cache.invalidate("tracking-scripts:*");
       await logAudit(adminId, "settings.update", "settings", param(req, "id"), { action: "tracking_script.update", platform: script.platform }, getClientIp(req));
@@ -2592,12 +2797,12 @@ export async function registerRoutes(
           -- Invoices
           (SELECT COUNT(*) FROM invoices) as total_invoices,
           (SELECT COUNT(*) FROM invoices WHERE status = 'paid') as paid_invoices,
-          (SELECT COUNT(*) FROM invoices WHERE status = 'pending') as pending_invoices,
-          (SELECT COUNT(*) FROM invoices WHERE status = 'overdue') as overdue_invoices,
+          (SELECT COUNT(*) FROM invoices WHERE status = 'sent') as pending_invoices,
+          (SELECT COUNT(*) FROM invoices WHERE status = 'overdue' OR (status = 'sent' AND due_date < CURRENT_DATE)) as overdue_invoices,
 
           -- Projects
           (SELECT COUNT(*) FROM projects) as total_projects,
-          (SELECT COUNT(*) FROM projects WHERE status = 'active') as active_projects,
+          (SELECT COUNT(*) FROM projects WHERE status = 'in_progress') as active_projects,
 
           -- Profiles
           (SELECT COUNT(*) FROM profiles) as total_profiles,
@@ -2661,76 +2866,6 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Analytics error:", error);
       res.status(500).json({ message: error?.message || "فشل في جلب التحليلات" });
-    }
-  });
-
-  // ─── Migration Admin Routes ───────────────────────────────────────────────
-  app.get("/api/admin/migrate/preview", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { getDataPreview } = await import("./migration");
-      const preview = getDataPreview();
-      res.json(preview);
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message || "فشل في جلب المعاينة" });
-    }
-  });
-
-  app.get("/api/admin/migrate/state", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { getMigrationState } = await import("./migration");
-      res.json(getMigrationState());
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
-    }
-  });
-
-  app.post("/api/admin/migrate/users", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { migrateUsers } = await import("./migration");
-      res.json({ message: "بدأ نقل المستخدمين..." });
-      migrateUsers().catch(console.error);
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
-    }
-  });
-
-  app.post("/api/admin/migrate/clients", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { migrateClients } = await import("./migration");
-      res.json({ message: "بدأ نقل العملاء..." });
-      migrateClients().catch(console.error);
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
-    }
-  });
-
-  app.post("/api/admin/migrate/contracts", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { migrateContracts } = await import("./migration");
-      res.json({ message: "بدأ نقل العقود..." });
-      migrateContracts().catch(console.error);
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
-    }
-  });
-
-  app.post("/api/admin/migrate/profiles", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { migrateProfiles } = await import("./migration");
-      res.json({ message: "بدأ نقل الملفات..." });
-      migrateProfiles().catch(console.error);
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
-    }
-  });
-
-  app.post("/api/admin/migrate/reset", isAdmin, async (req: Request, res: Response) => {
-    try {
-      const { resetMigrationState } = await import("./migration");
-      resetMigrationState();
-      res.json({ message: "تم إعادة التعيين" });
-    } catch (error: any) {
-      res.status(500).json({ message: error?.message });
     }
   });
 

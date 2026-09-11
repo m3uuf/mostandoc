@@ -44,7 +44,7 @@ server/
 ├── storage.ts           # IStorage interface, CRUD data layer
 ├── cache.ts             # Request-level caching
 ├── audit.ts             # Audit logging
-├── migration.ts         # Bubble.io data migration tool
+├── migrate.ts           # Applies SQL migrations from migrations/ (release step)
 ├── cluster.ts           # Multi-worker production mode
 ├── vite.ts              # Vite dev server integration
 └── static.ts            # Static file serving (production)
@@ -63,9 +63,17 @@ npm run dev          # Start dev server (tsx, hot reload, port 5000)
 npm run build        # Build client (Vite) + server (esbuild) → dist/
 npm run start        # Production single-worker server
 npm run start:cluster # Production multi-worker server
-npm run check        # TypeScript type checking (tsc)
-npm run db:push      # Push Drizzle schema changes to PostgreSQL
+npm run check        # TypeScript type checking (tsc) — also runs as the first step of `npm run build`
+npm run db:generate  # Generate a SQL migration in migrations/ from shared/schema.ts changes
+npm run db:migrate   # Apply pending migrations (tracked in drizzle.__drizzle_migrations)
+npm run db:push      # Dev-only shortcut; never used in production
 ```
+
+### Schema changes
+Edit `shared/schema.ts` (or `shared/models/auth.ts`), run `npm run db:generate`, review the SQL in `migrations/`, then `npm run db:migrate`. Production runs `node dist/migrate.cjs` before the server starts (see `railway.json`); `drizzle-kit push --force` is no longer used. `migrations/0000_baseline.sql` is idempotent (`IF NOT EXISTS`) so an existing push-created database adopts migrations without changes.
+
+### Request validation
+Every POST/PATCH body is validated with Zod in `server/routes.ts` (schemas derived from `insertXSchema` in `shared/schema.ts`, with `userId`/`id` omitted so clients can never set them). Document HTML goes through `sanitizeDocumentHtml` before it is stored.
 
 ## Key Architecture Patterns
 
@@ -150,7 +158,7 @@ Routes (`server/routes.ts`) → Storage (`server/storage.ts` via `IStorage` inte
 - Health check: `/api/health`
 - Config: `railway.json`
 
-**History:** Project was originally built on Replit, then migrated to Railway. User data was migrated from Bubble.io (the previous no-code platform at `app.mostandoc.com`) using the migration tool in `server/migration.ts` — 395 users, 109 clients, 517 contracts, 6 profiles were transferred.
+**History:** Project was originally built on Replit, then migrated to Railway. User data was migrated from Bubble.io (the previous no-code platform at `app.mostandoc.com`) in March 2026 — 395 users, 109 clients, 517 contracts, 6 profiles were transferred. The one-off Bubble import tool (`server/migration.ts`, `/api/admin/migrate/*`, the admin migrate page) and the unused `server/replit_integrations/` were removed in September 2026.
 
 **Legacy configs** (kept for reference):
 - `.replit` — original Replit config

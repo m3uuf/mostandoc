@@ -66,6 +66,21 @@ async function buildAll() {
     logLevel: "info",
   });
 
+  // Build the migration runner (release step before the server starts)
+  await esbuild({
+    entryPoints: ["server/migrate.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/migrate.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
+
   // Build cluster entry point for multi-core production
   await esbuild({
     entryPoints: ["server/cluster.ts"],

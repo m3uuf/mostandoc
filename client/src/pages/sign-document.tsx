@@ -14,7 +14,7 @@ const logoIcon = "/favicon.png";
 import type { Document, DocumentField } from "@shared/schema";
 import { extractFillableFields, type FillableFieldAttrs, type FillableFieldType, FIELD_CONFIG } from "@/components/editor/fillable-fields-extension";
 
-type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[]; isSigned?: boolean };
+type DocumentWithDetails = Document & { fields: DocumentField[]; signatures: any[]; isSigned?: boolean; hasSignedCopy?: boolean };
 
 function normalizeFileUrl(url: string | null | undefined): string {
   if (!url) return "";
@@ -72,7 +72,7 @@ export default function SignDocument() {
   const [fillableValues, setFillableValues] = useState<Record<number, string>>({});
   const fillableSigRefs = useRef<Record<number, SignatureCanvas | null>>({});
 
-  const { data: doc, isLoading, error } = useQuery<DocumentWithDetails>({
+  const { data: doc, isLoading, error, refetch } = useQuery<DocumentWithDetails>({
     queryKey: ["/api/documents/sign", params.token],
     queryFn: async () => {
       const res = await fetch(`/api/documents/sign/${params.token}`);
@@ -117,7 +117,9 @@ export default function SignDocument() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Reload so the signed view shows the recorded signature and the immutable signed copy.
+      await refetch();
       setSigned(true);
     },
     onError: (error: Error) => {
@@ -179,8 +181,26 @@ export default function SignDocument() {
         <div className="max-w-4xl mx-auto p-6">
           <Card>
             <CardContent className="p-6">
-              {/* Show document content */}
-              {doc.docType === "text" && doc.content ? (
+              {/* Show the immutable signed copy when it exists, otherwise the original content */}
+              {doc.hasSignedCopy ? (
+                <div className="space-y-3">
+                  <iframe
+                    title="النسخة الموقّعة"
+                    src={`/api/documents/sign/${params.token}/signed`}
+                    sandbox=""
+                    className="w-full rounded-lg border bg-white"
+                    style={{ minHeight: 900 }}
+                  />
+                  <a
+                    href={`/api/documents/sign/${params.token}/signed`}
+                    download={`signed-${doc.id}.html`}
+                    className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                  >
+                    <FileText className="h-4 w-4" />
+                    تحميل النسخة الموقّعة
+                  </a>
+                </div>
+              ) : doc.docType === "text" && doc.content ? (
                 <div className="prose max-w-none" dir="rtl" dangerouslySetInnerHTML={{ __html: doc.content as string }} />
               ) : doc.fileUrl ? (
                 <PdfRenderer fileUrl={doc.fileUrl} />

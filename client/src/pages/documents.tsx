@@ -219,6 +219,12 @@ export default function DocumentsPage() {
                           </DropdownMenuItem>
                         </>
                       )}
+                      {doc.status === "signed" && (
+                        <DropdownMenuItem onClick={() => window.open(`/api/documents/${doc.id}/signed`, "_blank")}>
+                          <FileText className="ml-2 h-4 w-4" />
+                          عرض النسخة الموقّعة
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"

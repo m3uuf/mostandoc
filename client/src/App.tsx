@@ -26,7 +26,6 @@ import DocumentsPage from "@/pages/documents";
 import DocumentEditor from "@/pages/document-editor";
 import SignDocument from "@/pages/sign-document";
 import TextDocumentEditor from "@/pages/text-document-editor";
-import AdminMigratePage from "@/pages/admin-migrate";
 import AdminLayout from "@/pages/admin/admin-layout";
 import TemplatesGallery from "@/pages/templates-gallery";
 import ImpersonationBanner from "@/components/admin/impersonation-banner";
@@ -71,7 +70,6 @@ function AuthenticatedLayout() {
               <Route path="/dashboard/documents/text/:id" component={TextDocumentEditor} />
               <Route path="/dashboard/documents/(.*)" component={DocumentEditor} />
               <Route path="/dashboard/documents" component={DocumentsPage} />
-              <Route path="/dashboard/admin/migrate" component={AdminMigratePage} />
               <Route path="/dashboard/admin/(.*)" component={AdminLayout} />
               <Route path="/dashboard/admin" component={AdminLayout} />
               <Route component={NotFound} />

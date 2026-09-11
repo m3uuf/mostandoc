@@ -1,15 +1,20 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, decimal, integer, boolean, jsonb, date, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { users } from "./models/auth";
 
 export { sessions } from "./models/auth";
 export { users } from "./models/auth";
 export type { User, UpsertUser } from "./models/auth";
 
+// Referential integrity: every owned row cascades with its user; optional links
+// (client/contract) are nulled so history survives when the linked record is removed.
+const ownedByUser = () => varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" });
+
 export const profiles = pgTable("profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().unique(),
+  userId: ownedByUser().unique(),
   username: text("username").unique().notNull(),
   fullName: text("full_name"),
   bio: text("bio"),
@@ -38,7 +43,7 @@ export const profiles = pgTable("profiles", {
 
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
+  userId: ownedByUser(),
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
@@ -54,8 +59,8 @@ export const clients = pgTable("clients", {
 
 export const contracts = pgTable("contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  clientId: varchar("client_id"),
+  userId: ownedByUser(),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
   content: text("content"),
@@ -69,12 +74,14 @@ export const contracts = pgTable("contracts", {
 }, (table) => [
   index("idx_contracts_user_id").on(table.userId),
   index("idx_contracts_title").on(table.title),
+  index("idx_contracts_client_id").on(table.clientId),
+  index("idx_contracts_end_date").on(table.endDate),
 ]);
 
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  clientId: varchar("client_id"),
+  userId: ownedByUser(),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   invoiceNumber: text("invoice_number").notNull(),
   status: text("status").default("draft"),
   issueDate: date("issue_date").default(sql`CURRENT_DATE`),
@@ -91,23 +98,27 @@ export const invoices = pgTable("invoices", {
 }, (table) => [
   index("idx_invoices_user_id").on(table.userId),
   index("idx_invoices_number").on(table.invoiceNumber),
+  index("idx_invoices_client_id").on(table.clientId),
+  index("idx_invoices_status").on(table.status),
+  index("idx_invoices_due_date").on(table.dueDate),
+  uniqueIndex("uq_invoices_user_number").on(table.userId, table.invoiceNumber),
 ]);
 
 export const invoiceItems = pgTable("invoice_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  invoiceId: varchar("invoice_id").notNull(),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
   unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
   total: decimal("total", { precision: 12, scale: 2 }).notNull(),
   sortOrder: integer("sort_order").default(0),
-});
+}, (table) => [index("idx_invoice_items_invoice_id").on(table.invoiceId)]);
 
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  clientId: varchar("client_id"),
-  contractId: varchar("contract_id"),
+  userId: ownedByUser(),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
+  contractId: varchar("contract_id").references(() => contracts.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").default("not_started"),
@@ -120,11 +131,13 @@ export const projects = pgTable("projects", {
 }, (table) => [
   index("idx_projects_user_id").on(table.userId),
   index("idx_projects_name").on(table.name),
+  index("idx_projects_client_id").on(table.clientId),
+  index("idx_projects_contract_id").on(table.contractId),
 ]);
 
 export const projectTasks = pgTable("project_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   status: text("status").default("todo"),
@@ -133,11 +146,13 @@ export const projectTasks = pgTable("project_tasks", {
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [index("idx_project_tasks_project_id").on(table.projectId)]);
+
+const ownedByProfile = () => varchar("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" });
 
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileId: varchar("profile_id").notNull(),
+  profileId: ownedByProfile(),
   title: text("title").notNull(),
   description: text("description"),
   price: decimal("price", { precision: 12, scale: 2 }),
@@ -146,11 +161,11 @@ export const services = pgTable("services", {
   sortOrder: integer("sort_order").default(0),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [index("idx_services_profile_id").on(table.profileId)]);
 
 export const portfolioItems = pgTable("portfolio_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileId: varchar("profile_id").notNull(),
+  profileId: ownedByProfile(),
   title: text("title").notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
@@ -158,21 +173,21 @@ export const portfolioItems = pgTable("portfolio_items", {
   category: text("category"),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [index("idx_portfolio_items_profile_id").on(table.profileId)]);
 
 export const contactMessages = pgTable("contact_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileId: varchar("profile_id").notNull(),
+  profileId: ownedByProfile(),
   senderName: text("sender_name").notNull(),
   senderEmail: text("sender_email").notNull(),
   message: text("message").notNull(),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [index("idx_contact_messages_profile_id").on(table.profileId)]);
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
+  userId: ownedByUser(),
   type: text("type").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
@@ -183,7 +198,7 @@ export const notifications = pgTable("notifications", {
 
 export const subscriptions = pgTable("subscriptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().unique(),
+  userId: ownedByUser().unique(),
   stripeCustomerId: varchar("stripe_customer_id"),
   stripeSubscriptionId: varchar("stripe_subscription_id"),
   stripePriceId: varchar("stripe_price_id"),
@@ -195,12 +210,16 @@ export const subscriptions = pgTable("subscriptions", {
   createdAt: timestamp("created_at").defaultNow(),
   clientLimit: integer("client_limit"),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [index("idx_subscriptions_user_id").on(table.userId), index("idx_subscriptions_stripe_customer_id").on(table.stripeCustomerId)]);
+}, (table) => [
+  index("idx_subscriptions_user_id").on(table.userId),
+  index("idx_subscriptions_stripe_customer_id").on(table.stripeCustomerId),
+  index("idx_subscriptions_status").on(table.status),
+]);
 
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  clientId: varchar("client_id"),
+  userId: ownedByUser(),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   docType: text("doc_type").default("file"),
   content: text("content"),
@@ -212,17 +231,23 @@ export const documents = pgTable("documents", {
   recipientEmail: text("recipient_email"),
   notes: text("notes"),
   signedAt: timestamp("signed_at"),
+  // Immutable rendered copy (sanitized HTML) produced at signing time; the legal artifact.
+  signedContent: text("signed_content"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_documents_user_id").on(table.userId),
   index("idx_documents_share_token").on(table.shareToken),
   index("idx_documents_title").on(table.title),
+  index("idx_documents_client_id").on(table.clientId),
+  index("idx_documents_status").on(table.status),
 ]);
+
+const ownedByDocument = () => varchar("document_id").notNull().references(() => documents.id, { onDelete: "cascade" });
 
 export const documentFiles = pgTable("document_files", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").notNull().unique(),
+  documentId: ownedByDocument().unique(),
   fileData: text("file_data").notNull(),
   mimeType: text("mime_type").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -230,7 +255,7 @@ export const documentFiles = pgTable("document_files", {
 
 export const documentFields = pgTable("document_fields", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").notNull(),
+  documentId: ownedByDocument(),
   type: text("type").notNull(),
   label: text("label"),
   value: text("value"),
@@ -241,22 +266,25 @@ export const documentFields = pgTable("document_fields", {
   page: integer("page").default(0),
   required: boolean("required").default(true),
   sortOrder: integer("sort_order").default(0),
-});
+}, (table) => [index("idx_document_fields_document_id").on(table.documentId)]);
 
 export const documentSignatures = pgTable("document_signatures", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").notNull(),
+  documentId: ownedByDocument(),
   signerName: text("signer_name").notNull(),
   signerEmail: text("signer_email"),
   signatureData: text("signature_data").notNull(),
   ipAddress: text("ip_address"),
   signedAt: timestamp("signed_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_document_signatures_document_id").on(table.documentId),
+  index("idx_document_signatures_signed_at").on(table.signedAt),
+]);
 
 // ─── Content Library ─────────────────────────────────────────────
 export const contentLibrary = pgTable("content_library", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
+  userId: ownedByUser(),
   name: text("name").notNull(),
   description: text("description"),
   content: text("content").notNull(),
